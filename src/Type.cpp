@@ -168,6 +168,9 @@ bool Type::can_represent(int64_t x) const {
 }
 
 bool Type::can_represent(uint64_t x) const {
+    if(is_unknown()){
+        return true;
+    }
     if (is_int()) {
         return x <= (uint64_t)(max_int(bits()));
     } else if (is_uint()) {
@@ -196,6 +199,9 @@ bool Type::can_represent(uint64_t x) const {
 }
 
 bool Type::can_represent(double x) const {
+    if(is_unknown()){
+        return true;
+    }
     if (is_int()) {
         int64_t i = Internal::safe_numeric_cast<int64_t>(x);
         return (x >= min_int(bits())) && (x <= max_int(bits())) && (x == (double)i);
