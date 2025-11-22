@@ -106,6 +106,18 @@ public:
         }
     }
 
+    void visit(const UnknownImm *op) override {
+        const UnknownImm *e = expr.as<UnknownImm>();
+        if (!e ||
+            reinterpret_bits<uint64_t>(e->double_value) !=
+                reinterpret_bits<uint64_t>(op->double_value) ||
+            e->uint64_value != op->uint64_value ||
+            e->int64_value != op->int64_value ||
+            !types_match(op->type, e->type)) {
+            result = false;
+        }
+    }
+
     void visit(const Cast *op) override {
         const Cast *e = expr.as<Cast>();
         if (result && e && types_match(op->type, e->type)) {

@@ -97,6 +97,10 @@ class DerivativeBounds : public IRVisitor {
         result = ConstantInterval::single_point(0);
     }
 
+    void visit(const UnknownImm *) override {
+        result = ConstantInterval::single_point(0);
+    }
+
     void visit(const Cast *op) override {
         op->value.accept(this);
 

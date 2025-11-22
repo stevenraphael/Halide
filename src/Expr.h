@@ -5,6 +5,7 @@
  * Base classes for Halide expressions (\ref Halide::Expr) and statements (\ref Halide::Internal::Stmt)
  */
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,7 @@ enum class IRNodeType {
     UIntImm,
     FloatImm,
     StringImm,
+    UnknownImm,
     Broadcast,
     Cast,
     Reinterpret,
@@ -248,6 +250,16 @@ struct StringImm : public ExprNode<StringImm> {
     static const StringImm *make(const std::string &val);
 
     static const IRNodeType _node_type = IRNodeType::StringImm;
+};
+
+struct UnknownImm : public ExprNode<UnknownImm> {
+    double double_value;
+    uint64_t uint64_value;
+    int64_t int64_value;
+
+    static const UnknownImm *make(Type t, double double_value, uint64_t uint64_value, int64_t int64_value);
+
+    static const IRNodeType _node_type = IRNodeType::UnknownImm;
 };
 
 }  // namespace Internal

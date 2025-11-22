@@ -1,3 +1,4 @@
+#include "Type.h"
 #include <algorithm>
 #include <cstring>
 #include <iostream>
@@ -3313,7 +3314,7 @@ FuncRef::operator Expr() const {
     */
 
     if (!(func.has_pure_definition() || func.has_extern_definition())) {
-        return Call::make(Type{}, func.name(), args, Call::Halide,
+        return Call::make(Type(Type::Unknown, 0, 1), func.name(), args, Call::Halide,
                           func.get_contents(), 0, Buffer<>(), Parameter());
     }
 

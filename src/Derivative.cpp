@@ -54,6 +54,7 @@ protected:
     void visit(const UIntImm *) override;
     void visit(const FloatImm *) override;
     void visit(const StringImm *) override;
+    void visit(const UnknownImm *) override;
     void visit(const Cast *op) override;
     void visit(const Reinterpret *op) override;
     void visit(const Variable *op) override;
@@ -817,6 +818,10 @@ void ReverseAccumulationVisitor::visit(const FloatImm *op) {
 }
 
 void ReverseAccumulationVisitor::visit(const StringImm *op) {
+    // Nothing to propagate to
+}
+
+void ReverseAccumulationVisitor::visit(const UnknownImm *op) {
     // Nothing to propagate to
 }
 

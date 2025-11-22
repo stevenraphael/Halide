@@ -1,5 +1,6 @@
 #include "ModulusRemainder.h"
 
+#include "Expr.h"
 #include "IR.h"
 #include "IROperator.h"
 #include "IRPrinter.h"
@@ -34,6 +35,7 @@ public:
     void visit(const UIntImm *) override;
     void visit(const FloatImm *) override;
     void visit(const StringImm *) override;
+    void visit(const UnknownImm *) override;
     void visit(const Cast *) override;
     void visit(const Reinterpret *) override;
     void visit(const Variable *) override;
@@ -97,6 +99,10 @@ void ComputeModulusRemainder::visit(const FloatImm *) {
 
 void ComputeModulusRemainder::visit(const StringImm *) {
     internal_error << "modulus_remainder of string\n";
+}
+
+void ComputeModulusRemainder::visit(const UnknownImm *) {
+    internal_error << "modulus_remainder of unknown immediate\n";
 }
 
 void ComputeModulusRemainder::visit(const Cast *) {

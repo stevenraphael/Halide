@@ -1,3 +1,4 @@
+#include "Expr.h"
 #include "Simplify_Internal.h"
 
 using std::string;
@@ -36,6 +37,11 @@ Expr Simplify::visit(const FloatImm *op, ExprInfo *info) {
 }
 
 Expr Simplify::visit(const StringImm *op, ExprInfo *info) {
+    clear_expr_info(info);
+    return op;
+}
+
+Expr Simplify::visit(const UnknownImm *op, ExprInfo *info) {
     clear_expr_info(info);
     return op;
 }

@@ -223,6 +223,11 @@ private:
         set_data_costs(op, 0, {});
     }
 
+    void visit(const UnknownImm *op) override {
+        set_compute_costs(op, 0, {});
+        set_data_costs(op, 0, {});
+    }
+
     void visit(const Variable *op) override {
         set_compute_costs(op, 0, {});
         set_data_costs(op, 0, {});
@@ -1420,6 +1425,10 @@ private:
 
     void visit(const StringImm *op) override {
         print_constant("StringImm Imm", Expr(op));
+    }
+
+    void visit(const UnknownImm *op) override {
+        print_constant("UnknownImm Imm", Expr(op));
     }
 
     void visit(const Variable *op) override {

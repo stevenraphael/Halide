@@ -73,6 +73,15 @@ const StringImm *StringImm::make(const std::string &val) {
     return node;
 }
 
+const UnknownImm *UnknownImm::make(Type t, double double_value, uint64_t uint64_value, int64_t int64_value) {
+    UnknownImm *node = new UnknownImm;
+    node->type = t;
+    node->double_value = double_value;
+    node->uint64_value = uint64_value;
+    node->int64_value = int64_value;
+    return node;
+}
+
 /** Check if for_type executes for loop iterations in parallel and unordered. */
 bool is_unordered_parallel(ForType for_type) {
     return (for_type == ForType::Parallel ||

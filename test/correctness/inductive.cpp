@@ -41,8 +41,6 @@ int reorder_test() {
 
     Var xi("xi"), xii("xii"), xo("xo");
 
-    // g(x, y) = x + y;
-    // g(r.x, r.y) = g(r.x, r.y);
     g(x, y) = select(x <= 0, 0, g(max(0, x - 1), y) + x + y);
 
     h(x, y) = g(x + 5, y) / 4;
@@ -192,7 +190,6 @@ int multi_baseline_test() {
         std::vector<int> ans;
 
         for (int a = 0; a <= y; a++) {
-            int b = 2 * x + a;
             if (a <= 0) {
                 ans.emplace_back(4 * x);
             } else if (a <= 3) {

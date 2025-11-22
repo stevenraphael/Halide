@@ -297,6 +297,11 @@ struct Comparer {
             case IRNodeType::StringImm:
                 cmp(&StringImm::value);
                 break;
+            case IRNodeType::UnknownImm:
+                cmp(&UnknownImm::double_value);
+                cmp(&UnknownImm::uint64_value);
+                cmp(&UnknownImm::int64_value);
+                break;
             case IRNodeType::Broadcast:
                 cmp(&Broadcast::value);
                 break;

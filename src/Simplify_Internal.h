@@ -487,6 +487,7 @@ public:
     Expr visit(const UIntImm *op, ExprInfo *info);
     Expr visit(const FloatImm *op, ExprInfo *info);
     Expr visit(const StringImm *op, ExprInfo *info);
+    Expr visit(const UnknownImm *op, ExprInfo *info);
     Expr visit(const Broadcast *op, ExprInfo *info);
     Expr visit(const Cast *op, ExprInfo *info);
     Expr visit(const Reinterpret *op, ExprInfo *info);

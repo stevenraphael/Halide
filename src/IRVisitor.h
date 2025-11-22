@@ -33,6 +33,7 @@ protected:
     virtual void visit(const UIntImm *);
     virtual void visit(const FloatImm *);
     virtual void visit(const StringImm *);
+    virtual void visit(const UnknownImm *);
     virtual void visit(const Cast *);
     virtual void visit(const Reinterpret *);
     virtual void visit(const Variable *);
@@ -107,6 +108,7 @@ protected:
     void visit(const UIntImm *) override;
     void visit(const FloatImm *) override;
     void visit(const StringImm *) override;
+    void visit(const UnknownImm *) override;
     void visit(const Cast *) override;
     void visit(const Reinterpret *) override;
     void visit(const Variable *) override;
@@ -176,6 +178,8 @@ private:
             return ((T *)this)->visit((const FloatImm *)node, std::forward<Args>(args)...);
         case IRNodeType::StringImm:
             return ((T *)this)->visit((const StringImm *)node, std::forward<Args>(args)...);
+        case IRNodeType::UnknownImm:
+            return ((T *)this)->visit((const UnknownImm *)node, std::forward<Args>(args)...);
         case IRNodeType::Broadcast:
             return ((T *)this)->visit((const Broadcast *)node, std::forward<Args>(args)...);
         case IRNodeType::Cast:
@@ -265,6 +269,7 @@ private:
         case IRNodeType::UIntImm:
         case IRNodeType::FloatImm:
         case IRNodeType::StringImm:
+        case IRNodeType::UnknownImm:
         case IRNodeType::Broadcast:
         case IRNodeType::Cast:
         case IRNodeType::Reinterpret:

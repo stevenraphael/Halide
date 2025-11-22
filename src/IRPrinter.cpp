@@ -297,6 +297,7 @@ std::ostream &operator<<(std::ostream &stream, IRNodeType type) {
         CASE(UIntImm)
         CASE(FloatImm)
         CASE(StringImm)
+        CASE(UnknownImm)
         CASE(Broadcast)
         CASE(Cast)
         CASE(Reinterpret)
@@ -798,6 +799,10 @@ void IRPrinter::visit(const StringImm *op) {
     }
     stream << "\"";
     stream << ansi_reset;
+}
+
+void IRPrinter::visit(const UnknownImm *op) {
+    stream << "<unknown immediate>";
 }
 
 void IRPrinter::visit(const Cast *op) {

@@ -25,6 +25,9 @@ Expr IRMutator::visit(const FloatImm *op) {
 Expr IRMutator::visit(const StringImm *op) {
     return op;
 }
+Expr IRMutator::visit(const UnknownImm *op) {
+    return op;
+}
 Expr IRMutator::visit(const Variable *op) {
     return op;
 }

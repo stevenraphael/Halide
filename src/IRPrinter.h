@@ -245,6 +245,7 @@ protected:
     void visit(const UIntImm *) override;
     void visit(const FloatImm *) override;
     void visit(const StringImm *) override;
+    void visit(const UnknownImm *) override;
     void visit(const Cast *) override;
     void visit(const Reinterpret *) override;
     void visit(const Variable *) override;

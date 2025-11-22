@@ -1043,6 +1043,10 @@ void ExprNode<StringImm>::accept(IRVisitor *v) const {
     v->visit((const StringImm *)this);
 }
 template<>
+void ExprNode<UnknownImm>::accept(IRVisitor *v) const {
+    v->visit((const UnknownImm *)this);
+}
+template<>
 void ExprNode<Cast>::accept(IRVisitor *v) const {
     v->visit((const Cast *)this);
 }
@@ -1234,6 +1238,10 @@ Expr ExprNode<FloatImm>::mutate_expr(IRMutator *v) const {
 template<>
 Expr ExprNode<StringImm>::mutate_expr(IRMutator *v) const {
     return v->visit((const StringImm *)this);
+}
+template<>
+Expr ExprNode<UnknownImm>::mutate_expr(IRMutator *v) const {
+    return v->visit((const UnknownImm *)this);
 }
 template<>
 Expr ExprNode<Cast>::mutate_expr(IRMutator *v) const {

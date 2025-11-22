@@ -133,6 +133,9 @@ bool Type::can_represent(const Internal::ConstantInterval &in) const {
 }
 
 bool Type::can_represent(int64_t x) const {
+    if(is_unknown()){
+        return true;
+    }
     if (is_int()) {
         return x >= min_int(bits()) && x <= max_int(bits());
     } else if (is_uint()) {

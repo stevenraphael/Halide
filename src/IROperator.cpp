@@ -8,6 +8,7 @@
 #include "CSE.h"
 #include "ConstantBounds.h"
 #include "Debug.h"
+#include "Expr.h"
 #include "Func.h"
 #include "IREquality.h"
 #include "IRMutator.h"
@@ -187,6 +188,8 @@ std::optional<int64_t> as_const_int(const Expr &e) {
         return as_const_int(b->value);
     } else if (const IntImm *i = e.as<IntImm>()) {
         return i->value;
+    } else if (const UnknownImm *u = e.as<UnknownImm>()) {
+        return u->int64_value;
     } else {
         return std::nullopt;
     }
@@ -199,6 +202,8 @@ std::optional<uint64_t> as_const_uint(const Expr &e) {
         return as_const_uint(b->value);
     } else if (const UIntImm *i = e.as<UIntImm>()) {
         return i->value;
+    } else if (const UnknownImm *u = e.as<UnknownImm>()) {
+        return u->uint64_value;
     } else {
         return std::nullopt;
     }
@@ -211,6 +216,8 @@ std::optional<double> as_const_float(const Expr &e) {
         return as_const_float(b->value);
     } else if (const FloatImm *f = e.as<FloatImm>()) {
         return f->value;
+    } else if (const UnknownImm *u = e.as<UnknownImm>()) {
+        return u->double_value;
     } else {
         return std::nullopt;
     }
@@ -370,6 +377,8 @@ Expr make_const_helper(Type t, T val) {
         return UIntImm::make(t, (uint64_t)val);
     } else if (t.is_float()) {
         return FloatImm::make(t, (double)val);
+    } else if (t.is_unknown()) {
+        return UnknownImm::make(t, (double)val, (uint64_t)val, (int64_t)val);
     } else {
         internal_error << "Can't make a constant of type " << t << "\n";
         return Expr();
@@ -671,12 +680,12 @@ void match_types(Expr &a, Expr &b) {
     }
 
     if (a.type().is_unknown() && !b.type().is_unknown()) {
-        b = cast(Type{}, b);
+        b = cast(Type(Type::Unknown, a.type().bits(), a.type().lanes()), b);
         return;
     }
 
     if (b.type().is_unknown() && !a.type().is_unknown()) {
-        a = cast(Type{}, a);
+        a = cast(Type(Type::Unknown, b.type().bits(), b.type().lanes()), a);
         return;
     }
 
@@ -1526,6 +1535,8 @@ Expr declare_type(Type t, const Expr &e) {
     } else if (const Cast *op = e.as<Cast>()) {
         // Must be a cast to unknown
         return Cast::make(t, op->value);
+    } else if(const UnknownImm *op = e.as<UnknownImm>()) {
+        return cast(t, op);
     } else {
         user_error << "Can't do top-down type inference on " << e;
     }
