@@ -2547,9 +2547,6 @@ Stmt schedule_functions(const vector<Function> &outputs,
                         const map<string, Function> &env,
                         const Target &target,
                         bool &any_memoized) {
-    for (const Function &o : outputs) {
-        user_assert(!o.is_inductive()) << "Function" << o.name() << " is an inductively defined output buffer, which is unsupported.\n";
-    }
     string root_var = LoopLevel::root().lock().to_string();
     Stmt s = For::make(root_var, 0, 0, ForType::Serial, Partition::Never, DeviceAPI::Host, Evaluate::make(0));
 

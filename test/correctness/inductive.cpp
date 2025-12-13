@@ -14,20 +14,16 @@ using namespace Halide;
 using namespace Halide::Internal;
 
 int simple_inductive_test() {
-    Func g("g"), h("h");
+    Func g("g");
     Var x("x"), y("y");
 
     // g(x, y) = x + y;
     // g(r.x, r.y) = g(r.x, r.y);
     g(x, y) = select(x <= 0, 0, g(max(0, x - 1), y) + x + y);
 
-    h(x, y) = g(x + 5, y) / 4;
-
-    g.compute_at(h, x).store_at(h, y);
-
-    Buffer<int> im = h.realize({600, 5});
+    Buffer<int> im = g.realize({600, 5});
     auto func = [](int x, int y) {
-        return (y * (x + 5) + (x + 5) * (x + 6) / 2) / 4;
+        return y * x + x * (x + 1) / 2;
     };
     if (check_image(im, func)) {
         return 1;
