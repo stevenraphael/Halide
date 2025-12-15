@@ -18,6 +18,7 @@
 #include "ExprUsesVar.h"
 #include "Func.h"
 #include "Function.h"
+#include "Inductive.h"
 #include "IR.h"
 #include "IREquality.h"
 #include "IRMutator.h"
@@ -491,6 +492,8 @@ void Stage::set_dim_type(const VarOrRVar &var, ForType t) {
         if (dim_match(dim, var)) {
             found = true;
             dim.for_type = t;
+
+            bool inductive_safe = !dim.is_inductive();
 
             // If it's an rvar and the for type is parallel, we need to
             // validate that this doesn't introduce a race condition,
@@ -1116,6 +1119,25 @@ void Stage::split(const string &old, const string &outer, const string &inner, c
             dims.insert(dims.begin() + i, dims[i]);
             dims[i].var = inner_name;
             dims[i + 1].var = outer_name;
+            if(dims[i].is_inductive()) {
+                bool previously_split = false;
+                for (const Split &s : definition.schedule().splits()) {
+                    if(s.inner == old_name || s.outer == old_name){ {
+                        previously_split = true;
+                        break;
+                    }
+                }
+
+                int gcd = split_gcd(function, old_name);
+                int factor_val;
+                if (const std::optional<int64_t> int_factor = as_const_int(factor)) {
+                    int factor_val = static_cast<int>(*int_factor);
+                    if(!previously_split && gcd % factor_val == 0){
+                        dims[i].dim_type = DimType::PureVar;
+                    }
+                }
+                
+            }
             if (dims[i].for_type == ForType::Extern) {
                 // If we split an extern loop, mark the outer loop serial.
                 dims[i + 1].for_type = ForType::Serial;

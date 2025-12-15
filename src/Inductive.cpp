@@ -122,5 +122,79 @@ Box expand_to_include_base_case(const Function &fn, const Box &box_required) {
     return b;
 }
 
+int split_gcd(const Function &fn, const string &var_name) {
+    int pos;
+    for (pos = 0; pos < (int)fn.args().size(); pos++) {
+        if (fn.args()[pos] == var_name) {
+            break;
+        }
+    }
+    user_assert(pos < (int)fn.args().size()) << "Variable " << var_name << " not found in function " << fn.name() << "\n";
+    const Expr &e = fn.values()[pos];
+    vector<int64_t> diffs;
+
+    struct FindDiffs : public IRVisitor {
+        using IRVisitor::visit;
+        const string &var_name;
+        const int pos;
+        const string &func_name;
+        vector<int64_t> &diffs;
+        FindDiffs(const string &v, int p, const string &f, vector<int64_t> &d) : var_name(v), pos(p), func_name(f), diffs(d) {
+        }
+
+        void visit(const Call *op) override {
+            if(op->name == func_name) {
+                const Expr &arg = op->args[pos];
+                int diff = 1;
+                if(const Sub *sub = arg.as<Sub>()) {
+                    const Variable *v_lhs = sub->a.as<Variable>();
+                    const Variable *v_rhs = sub->b.as<Variable>();
+                    if (v_lhs && v_lhs->name == var_name) {
+                        if (const IntImm *imm = sub->b.as<IntImm>()) {
+                            diff = imm->value;
+                        }
+                    }
+                }
+                else if(const Add *add = arg.as<Add>()) {
+                    const Variable *v_lhs = add->a.as<Variable>();
+                    const Variable *v_rhs = add->b.as<Variable>();
+                    if (v_lhs && v_lhs->name == var_name) {
+                        if (const IntImm *imm = add->b.as<IntImm>()) {
+                            diff = imm->value;
+                        }
+                    } else if (v_rhs && v_rhs->name == var_name) {
+                        if (const IntImm *imm = add->a.as<IntImm>()) {
+                            diff = imm->value;
+                        }
+                    }
+                }
+                else if(const Variable *v = arg.as<Variable>()) {
+                    if (v->name == var_name) {
+                        diff = 0;
+                    }
+                }
+                if(diff != 0) {
+                    diffs.push_back(diff);
+                }
+
+            }
+        }
+    };
+
+    FindDiffs find_diffs(var_name, pos, fn.name(), diffs);
+    for(const Expr &e : fn.values()){
+        e.accept(&find_diffs);
+    }
+    if(diffs.size() == 0) {
+        return 1;
+    }
+
+    int64_t result = 0;
+    for (int64_t d : diffs) {
+        result = gcd(result, std::abs(d));
+    }
+    return result;
+}
+
 }  // namespace Internal
 }  // namespace Halide

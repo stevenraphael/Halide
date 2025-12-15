@@ -40,6 +40,7 @@
 
 #include "Bounds.h"
 #include "Expr.h"
+#include "Function.h"
 #include "Interval.h"
 #include "Scope.h"
 #include "Solve.h"
@@ -52,6 +53,8 @@ namespace Internal {
 Box expand_to_include_base_case(const std::vector<std::string> &vars, const Expr &RHS, const std::string &func, const Box &box_required);
 Box expand_to_include_base_case(const Function &fn, const Box &box_required, const int &pos = 0);
 Box expand_to_include_base_case(const Function &fn, const Box &box_required);
+
+int split_gcd(const Function &fn, const std::string &var_name);
 
 }  // namespace Internal
 }  // namespace Halide
