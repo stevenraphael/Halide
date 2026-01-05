@@ -361,6 +361,11 @@ enum class DimType {
      * or vectorized. */
     InductiveVar,
 
+    /** The dim originated from a Var in an inductively defined pure
+     * definition, but can safely act like a pure variable. This status
+     * depends on the ordering of dimensions. */
+    PureInductiveVar,
+
     /** The dim originated from an RVar. You can evaluate a Func at
      * distinct values of this RVar in any order (including in
      * parallel) over exactly the interval specified in the

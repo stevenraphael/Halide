@@ -493,8 +493,6 @@ void Stage::set_dim_type(const VarOrRVar &var, ForType t) {
             found = true;
             dim.for_type = t;
 
-            bool inductive_safe = !dim.is_inductive();
-
             // If it's an rvar and the for type is parallel, we need to
             // validate that this doesn't introduce a race condition,
             // unless it is flagged explicitly or is a associative atomic operation.
