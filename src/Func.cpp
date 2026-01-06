@@ -1120,7 +1120,7 @@ void Stage::split(const string &old, const string &outer, const string &inner, c
             if(dims[i].is_inductive()) {
                 bool previously_split = false;
                 for (const Split &s : definition.schedule().splits()) {
-                    if(s.inner == old_name || s.outer == old_name){ {
+                    if(s.inner == old_name || s.outer == old_name) {
                         previously_split = true;
                         break;
                     }

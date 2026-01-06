@@ -225,6 +225,19 @@ int type_declare_test() {
     return 0;
 }
 
+int blur_test(){
+    Func f1("f1"), f2("f2"), f3("f3");
+    Var x;
+    f1(x) = im(x) + im(x-1);
+    f2(x) = select(x <= 0, 0, f1(x) + f2(x-1));
+    f3(x) = select(x <= 0, 0, f2(x) + f3(x-1));
+    f1.store_root();
+    f2.store_root();
+    f3.compile_to_lowered_stmt("blur.txt", {}, Halide::Text)
+    Buffer<int> im = f3.realize(100);
+
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -243,6 +256,7 @@ int main(int argc, char **argv) {
         {"1d sum test", sum_1d_test},
         {"multi-baseline test", multi_baseline_test},
         {"type declaration test", type_declare_test},
+        {"blur test", blur_test}
     };
 
     using Sharder = Halide::Internal::Test::Sharder;
