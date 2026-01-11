@@ -7,6 +7,7 @@
 #include "CodeGen_GPU_Dev.h"
 #include "ExprUsesVar.h"
 #include "Func.h"
+#include "Inductive.h"
 #include "IREquality.h"
 #include "IRMutator.h"
 #include "IROperator.h"
@@ -2133,6 +2134,48 @@ bool validate_schedule(Function f, const Stmt &s, const Target &target, bool is_
                     << "Externally defined Func " << f.name()
                     << " cannot have loop type " << i.for_type << " (" << i.var << ")\n";
             }
+        }
+    }
+
+    if (f.is_inductive()) {
+        if (splits_reordered(f.args(), f)) {
+            user_error
+                << "Inductive Func " << f.name()
+                << " has an illegal reordering of inductive variables.\n";
+        }
+        const StageSchedule &s = f.definition().schedule();
+        // Ensure legality of vectorized or parallelized inductive dims
+        for (const Dim &d : s.dims()) {
+            if (d.for_type != ForType::Vectorized && d.for_type != ForType::Parallel) {
+                continue;
+            }
+            if(d.dim_type != DimType::InductiveVar) {
+                continue;
+            }
+            // if d is a split var, get the original var
+            std::string possibly_split_var = d.var;
+            for (auto it = s.splits().rbegin(); it != s.splits().rend(); ++it) {
+                const Split &sp = *it;
+                if (var_name_match(possibly_split_var, sp.outer) ||
+                    var_name_match(possibly_split_var, sp.inner)) {
+                    possibly_split_var = sp.old_var;
+                }
+            }
+            int selpos = -1;
+            for (size_t i = 0; i < f.args().size(); i++) {
+                if (var_name_match(f.args()[i], possibly_split_var)) {
+                    selpos = (int)i;
+                    if (!can_be_pure(f.args(), f, selpos)) {
+                        user_error
+                            << "Inductive Func " << f.name()
+                            << " has been scheduled with dimension " << d.var
+                            << " marked as " << d.for_type
+                            << ", but this variable cannot be vectorized or parallelized.\n";
+                    }
+                    break;
+                }
+            }
+            internal_assert(selpos != -1) << "Could not find argument " << possibly_split_var << " in Func " << f.name() << "\n";
         }
     }
 

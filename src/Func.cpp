@@ -496,7 +496,7 @@ void Stage::set_dim_type(const VarOrRVar &var, ForType t) {
             // If it's an rvar and the for type is parallel, we need to
             // validate that this doesn't introduce a race condition,
             // unless it is flagged explicitly or is a associative atomic operation.
-            if (!dim.is_pure() && (var.is_rvar || dim.is_inductive()) && is_parallel(t)) {
+            if (!dim.is_pure() && (var.is_rvar) && is_parallel(t)) {
                 if (!definition.schedule().allow_race_conditions() &&
                     definition.schedule().atomic()) {
                     if (!definition.schedule().override_atomic_associativity_test()) {
@@ -1865,7 +1865,7 @@ Stage &Stage::reorder(const std::vector<VarOrRVar> &vars) {
     for (size_t i = 0; !safe_to_reorder && i < idx.size(); i++) {
         if (!dims[idx[i]].is_pure()) {
             for (size_t j = i + 1; !safe_to_reorder && j < idx.size(); j++) {
-                if (!dims[idx[j]].is_pure() && (idx[i] > idx[j])) {
+                if (!dims[idx[j]].is_pure() && !dims[idx[j]].is_inductive() && (idx[i] > idx[j])) {
                     // Generate an error if the operator is not both associative and commutative.
                     const auto &prover_result = prove_associativity(func_name, args, values);
                     safe_to_reorder = prover_result.associative() &&

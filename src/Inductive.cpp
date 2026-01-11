@@ -9,6 +9,7 @@
 #include "IRVisitor.h"
 #include "Simplify.h"
 #include "Substitute.h"
+#include <iostream>
 
 namespace Halide {
 namespace Internal {
@@ -98,6 +99,7 @@ public:
 class InductiveOrderChecker : public IRVisitor {
     using IRVisitor::visit;
     const vector<string> &vars;
+    const vector<string> &filtered_vars;
     const string &func;
     const int &selpos;
     const map<string, pair<int, int>> &var_appearances;
@@ -107,32 +109,36 @@ class InductiveOrderChecker : public IRVisitor {
             std::vector<string> pos_args;
             std::vector<string> neg_args;
             // attempt to prove that all dimensions earlier in the list are monotonically decreasing
+            // there must be at least one earlier inductive dimension
+            bool is_pure_local = false;
             for (size_t position = 0; position < vars.size(); position++) {
+                // continue if variable vars[selpos] not in filtered_vars
+                if (std::find(filtered_vars.begin(), filtered_vars.end(), vars[position]) == filtered_vars.end()) {
+                    continue;
+                }
+
                 if(position != selpos){
                     auto it1 = var_appearances.find(vars[selpos]);
                     auto it2 = var_appearances.find(vars[position]);
-                    if(it2->second.second >= it1->second.first){
-                        bool is_pure_local = false;
-                        const Expr inductive_expr = simplify(op->args[position]);
-                        if (const Sub *sub = inductive_expr.as<Sub>()) {
-                            const Variable *var = sub->a.as<Variable>();
-                            const std::optional<int64_t> constant = as_const_int(sub->b);
-                            if (var && constant && var->name == vars[position] && *constant > 0) {
-                                is_pure_local = true;
-                            }
+                    if(it2->second.first >= it1->second.second){
+                        const Expr new_v = Variable::make(op->args[position].type(), vars[position]);
+                        const Expr gets_lower = simplify(new_v - op->args[position] > 0, true);
+                        const Interval i_lower = solve_for_inner_interval(gets_lower, vars[position]);
+                        if(i_lower.is_everything()) {
+                            is_pure_local = true;
                         }
-                        is_pure |= is_pure_local;
                     }
                 }
             }
+            is_pure &= is_pure_local;
         }
         IRVisitor::visit(op);
     }
 
 public:
-    bool is_pure = false;
-    InductiveOrderChecker(const vector<string> &v, const string &func, const int &selpos, const map<string, pair<int, int>> &var_appearances)
-        : vars(v), func(func), selpos(selpos), var_appearances(var_appearances) {
+    bool is_pure = true;
+    InductiveOrderChecker(const vector<string> &v, const vector<string> &filtered_vars, const string &func, const int &selpos, const map<string, pair<int, int>> &var_appearances)
+        : vars(v), filtered_vars(filtered_vars), func(func), selpos(selpos), var_appearances(var_appearances) {
     }
 
 };
@@ -152,7 +158,6 @@ int split_gcd(const Function &fn, const string &var_name) {
         }
     }
     user_assert(pos < (int)fn.args().size()) << "Variable " << var_name << " not found in function " << fn.name() << "\n";
-    const Expr &e = fn.values()[pos];
     vector<int64_t> diffs;
 
     struct FindDiffs : public IRVisitor {
@@ -170,7 +175,6 @@ int split_gcd(const Function &fn, const string &var_name) {
                 int diff = 1;
                 if(const Sub *sub = arg.as<Sub>()) {
                     const Variable *v_lhs = sub->a.as<Variable>();
-                    const Variable *v_rhs = sub->b.as<Variable>();
                     if (v_lhs && v_lhs->name == var_name) {
                         if (const IntImm *imm = sub->b.as<IntImm>()) {
                             diff = imm->value;
@@ -218,6 +222,81 @@ int split_gcd(const Function &fn, const string &var_name) {
     return result;
 }
 
+// return true if any split variables originating from the same original variable
+// have been reordered with respect to one another
+bool splits_reordered(const std::vector<std::string> &vars, const Function &fn) {
+    // map each original variable to an ordered array of its split variables, from innermost to outermost, based on the vector of splits
+    const vector<Split> splits = fn.definition().schedule().splits();
+    std::map<std::string, std::vector<std::string>> split_var_map;
+    for (const auto &split : fn.definition().schedule().splits()) {
+        // search in all vectors of the map to find the original variable
+        bool found = false;
+        for(auto &it : split_var_map) {
+            for (const auto &var : it.second) {
+                if (var == split.old_var) {
+                    // get location of var in the vector
+                    auto pos = std::find(it.second.begin(), it.second.end(), var);
+                    // remove var and insert inner and outer splits in its place
+                    it.second.erase(pos);
+                    it.second.insert(pos, split.outer);
+                    it.second.insert(pos, split.inner);
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found) {
+            split_var_map[split.old_var] = {split.inner, split.outer};
+        }
+    }
+
+    // filter split vars to only include those whose corresponding dimension type is inductive
+    for(auto &it : split_var_map) {
+        std::vector<std::string> filtered_split_vars;
+        for (const auto &var : it.second) {
+            for (const auto &dim : fn.definition().schedule().dims()) {
+                if (dim.var == var && dim.is_inductive()) {
+                    filtered_split_vars.push_back(var);
+                }
+            }
+        }
+        it.second = filtered_split_vars;
+    }
+
+    // ensure that for each adjacent pair of split variables originating from the same original variable,
+    // the inner variable appears earlier in the dimension ordering than the outer variable
+    bool reordered = false;
+    vector<Dim> dims = fn.definition().schedule().dims();
+    int vindex = 0;
+    for(const auto &var : vars) {
+        auto it = split_var_map.find(var);
+        if (it != split_var_map.end()) {
+            const std::vector<std::string> &split_vars = it->second;
+            for (size_t i = 1; i < split_vars.size(); i++) {
+                int inner_pos = -1;
+                int outer_pos = -1;
+                for (size_t d = 0; d < dims.size(); d++) {
+                    if (dims[d].var == split_vars[i-1]) {
+                        inner_pos = d;
+                    }
+                    if (dims[d].var == split_vars[i]) {
+                        outer_pos = d;
+                    }
+                }
+                if (inner_pos > outer_pos) {
+                    if(!can_be_pure(vars, fn, vindex)) {
+                        reordered = true;
+                    }
+                }
+            }
+        }
+        vindex++;
+    }
+
+    return reordered;
+}
+
 bool can_be_pure(const std::vector<std::string> &vars, const Function &fn, const int &selpos) {
     // construct map of split variables to their original variable
     const vector<Split> splits = fn.definition().schedule().splits();
@@ -248,15 +327,60 @@ bool can_be_pure(const std::vector<std::string> &vars, const Function &fn, const
                 }
                 last_appearance = i;
             }
+            // check if it's an unsplit variable equal to var
+            else if (dim.var == var) {
+                if (first_appearance == -1) {
+                    first_appearance = i;
+                }
+                last_appearance = i;
+            }
         }
-        var_appearances[var] = {first_appearance, last_appearance};
+        if(first_appearance != -1 && last_appearance != -1) {
+            var_appearances[var] = {first_appearance, last_appearance};
+        }
     }
 
-    InductiveOrderChecker checker(vars, fn.name(), selpos, var_appearances);
+    // filter vars to only include those whose corresponding dimension type is inductive
+    std::vector<std::string> filtered_vars;
+    for(const auto &var : vars) {
+        auto it = var_appearances.find(var);
+        if (it != var_appearances.end()) {
+            filtered_vars.push_back(var);
+        }
+    }
+
+    InductiveOrderChecker checker(vars, filtered_vars, fn.name(), selpos, var_appearances);
     for (size_t pos = 0; pos < fn.values().size(); pos++) {
         fn.values()[pos].accept(&checker);
     }
     return checker.is_pure;
+}
+
+Box expand_to_include_base_case(const vector<string> &vars, const Expr &RHS, const string &func, const Box &box_required) {
+    Expr substed = substitute_in_all_lets(RHS);
+    Box box2 = box_required;
+    BaseCaseSolver b(vars, func, box_required.bounds);
+    substed.accept(&b);
+    for (size_t i = 0; i < vars.size(); i++) {
+        user_assert(b.result_intervals[i].is_bounded()) << "Unable to prove that the inductive function " << func << " uses a bounded interval";
+        Interval new_interval(min(b.result_intervals[i].min, box_required[i].min), box_required[i].max);
+        box2[i] = new_interval;
+    }
+
+    return box2;
+}
+
+Box expand_to_include_base_case(const Function &fn, const Box &box_required, const int &pos) {
+    return expand_to_include_base_case(fn.args(), fn.values()[pos], fn.name(), box_required);
+}
+
+Box expand_to_include_base_case(const Function &fn, const Box &box_required) {
+    Box b = expand_to_include_base_case(fn.args(), fn.values()[0], fn.name(), box_required);
+    for (size_t pos = 1; pos < fn.values().size(); pos++) {
+        Box b2 = expand_to_include_base_case(fn.args(), fn.values()[pos], fn.name(), box_required);
+        merge_boxes(b, b2);
+    }
+    return b;
 }
 
 }  // namespace Internal

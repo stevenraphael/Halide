@@ -226,16 +226,119 @@ int type_declare_test() {
 }
 
 int blur_test(){
-    Func f1("f1"), f2("f2"), f3("f3");
+    Func f1("f1"), f2("f2"), f3("f3"), f4("f4"), f5("f5");
     Var x;
-    f1(x) = im(x) + im(x-1);
+    f1(x) = x*x+1;
     f2(x) = select(x <= 0, 0, f1(x) + f2(x-1));
     f3(x) = select(x <= 0, 0, f2(x) + f3(x-1));
-    f1.store_root();
-    f2.store_root();
-    f3.compile_to_lowered_stmt("blur.txt", {}, Halide::Text)
-    Buffer<int> im = f3.realize(100);
+    f4(x) = select(x <= 0, 0, f3(x) + f4(x-1));
+    f5(x) = f4(x);
+    f2.store_root().compute_at(f5, x);
+    f3.store_root().compute_at(f5, x);
+    f4.store_root().compute_at(f5, x);
+    //f4.store_root().compute_root();
+    f5.compile_to_lowered_stmt("blurnr.txt", {}, Halide::Text);
+    Buffer<int> im = f5.realize({100});
+    return 0;
 
+}
+
+int blur2_test(){
+    Func f1("f1"), f2("f2"), f3("f3"), f4("f4"), f5("f5");
+    Var x;
+    f1(x) = x*x+1;
+    f2(x) = select(x <= 0, 0, f1(x) + f2(x-1));
+    f3(x) = select(x <= 0, 0, f2(x) + f3(x-1));
+    //f4(x) = select(x <= 0, 0, f3(x) + f4(x-1));
+    f4(x) = f3(x);
+    //f1.store_root().compute_at(f2, x);
+    f2.store_root().compute_at(f3, x);
+    f3.store_root().compute_root();//(f4, x);
+    //f4.store_root().compute_root();
+    f4.compile_to_lowered_stmt("blur2.txt", {}, Halide::Text);
+    Buffer<int> im = f4.realize({100});
+    return 0;
+
+}
+
+int parallel_test(){
+    Func f1("f1"), f2("f2"), f3("f3");
+    Var x("x"), y("y");
+    f1(x, y) = x * x + y + 1;
+    f2(x, y) = select(x <= 0||y<=0, 0, f1(x, y) + f2(x-1, y-1));
+    f3(x, y) = f2(x, y);
+    f2.store_root().compute_at(f3, y).parallel(x);
+    Buffer<int> im = f3.realize({100, 100});
+
+    Func g1("g1");
+    RDom r(1, 99, 1, 99);
+    g1(x, y) = 0;
+    g1(r.x, r.y) += g1(r.x - 1, r.y - 1) + r.x * r.x + r.y + 1;
+    Buffer<int> im2 = g1.realize({100, 100});
+    auto func = [&im2](int x, int y) {
+        return im2(x, y);
+    };
+    if(check_image(im, func)){
+        return 1;
+    }
+    return 0;
+}
+
+int parallel_test_2(){
+    Func f1("f1"), f2("f2"), f3("f3");
+    Var x("x"), y("y"), z("z");
+    f1(x, y,z) = x * x + y*z + 1;
+    f2(x, y,z) = select(x <= 0||y<=0||z<=0, 0, f1(x, y,z) + f2(x, y-1,z)+f2(x-1,y,z)+f2(x-1,y,z-1));
+    f3(x, y,z) = f2(x, y,z);
+    f3.reorder(z,x,y);
+    f2.compute_root().reorder(z,x,y).parallel(z);
+    Buffer<int> im = f3.realize({20, 20, 20});
+    Func g1("g1");
+    RDom r(1, 19, 1, 19, 1, 19);
+    g1(x, y, z) = 0;
+    g1(r.x, r.y, r.z) += g1(r.x, r.y - 1, r.z) + g1(r.x - 1, r.y, r.z) + g1(r.x - 1, r.y, r.z - 1) + r.x * r.x + r.y * r.z + 1;
+    Buffer<int> im2 = g1.realize({20, 20, 20});
+    auto func = [&im2](int x, int y, int z) {   
+        return im2(x, y, z);
+    };
+    if(check_image(im, func)){
+        return 1;
+    }
+    return 0;
+}
+
+int parallel_test_3(){
+    Func f1("f1"), f2("f2"), f3("f3");
+    Var x("x"), y("y"), z("z"), xo("xo"), xi("xi"), zo("zo"), zi("zi");
+    f1(x, y,z) = x * x + y*z + 1;
+    f2(x, y,z) = select(x <= 0||y<=0||z<=0, 0, f1(x, y,z) + f2(x, y-1,z)+f2(x-1,y,z)+f2(x-1,y,z-1));
+    f3(x, y,z) = f2(x, y,z);
+    f3.reorder(z,x,y);
+    f2.split(x,xo,xi,8).split(z,zo,zi,8);
+    f2.compute_root().reorder(zo, zi, xi, xo, y).parallel(zi); 
+    Buffer<int> im = f3.realize({20, 20, 20});
+    Func g1("g1");
+    RDom r(1, 19, 1, 19, 1, 19);
+    g1(x, y, z) = 0;
+    g1(r.x, r.y, r.z) += g1(r.x, r.y - 1, r.z) + g1(r.x - 1, r.y, r.z) + g1(r.x - 1, r.y, r.z - 1) + r.x * r.x + r.y * r.z + 1;
+    Buffer<int> im2 = g1.realize({20, 20, 20});
+    auto func = [&im2](int x, int y, int z) {   
+        return im2(x, y, z);
+    };
+    if(check_image(im, func)){
+        return 1;
+    }
+    return 0;
+}
+
+int parallel_test_4(){
+    Func f1("f1"), f2("f2"), f3("f3");
+    Var x("x"), xo("xo"), xi("xi");
+    f1(x) = select(x<=0, 0, f1(x-8) + f1(x-16)+x*x);
+    f2(x) = f1(x);
+    f1.compute_root().vectorize(x, 9);//split(x, xo, xi, 8).reorder(xo, xi).parallel(xi);
+    Buffer<int> im = f2.realize({100});
+    return 0;
 }
 
 }  // namespace
@@ -247,6 +350,10 @@ int main(int argc, char **argv) {
     };
 
     std::vector<Task> tasks = {
+        //{"parallel test 2", parallel_test_4},
+        {"parallel test", parallel_test},
+        {"parallel test 2", parallel_test_2},
+        {"parallel test 3", parallel_test_3},
         {"simple inductive test", simple_inductive_test},
         {"reordering test", reorder_test},
         {"summed area table test", summed_area_table},
@@ -256,7 +363,8 @@ int main(int argc, char **argv) {
         {"1d sum test", sum_1d_test},
         {"multi-baseline test", multi_baseline_test},
         {"type declaration test", type_declare_test},
-        {"blur test", blur_test}
+        {"blur test", blur_test},
+        {"blur2 test", blur_test},
     };
 
     using Sharder = Halide::Internal::Test::Sharder;

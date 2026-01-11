@@ -56,6 +56,9 @@ Box expand_to_include_base_case(const Function &fn, const Box &box_required);
 
 int split_gcd(const Function &fn, const std::string &var_name);
 
+bool splits_reordered(const std::vector<std::string> &vars, const Function &fn);
+bool can_be_pure(const std::vector<std::string> &vars, const Function &fn, const int &selpos);
+
 }  // namespace Internal
 }  // namespace Halide
 
