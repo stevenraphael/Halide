@@ -6,6 +6,7 @@
 #include "ConciseCasts.h"
 #include "Debug.h"
 #include "Deinterleave.h"
+#include "Expr.h"
 #include "ExprUsesVar.h"
 #include "FindIntrinsics.h"
 #include "Func.h"
@@ -2112,8 +2113,8 @@ private:
 class BoxesTouched : public IRGraphVisitor {
 
 public:
-    BoxesTouched(bool calls, bool provides, string fn, const Scope<Interval> *s, const FuncValueBounds &fb)
-        : func(std::move(fn)), consider_calls(calls), consider_provides(provides), func_bounds(fb) {
+    BoxesTouched(bool calls, bool provides, string fn, const Scope<Interval> *s, const FuncValueBounds &fb, bool conditional_rw)
+        : func(std::move(fn)), consider_calls(calls), consider_provides(provides), func_bounds(fb), conditional_rw(conditional_rw) {
         scope.set_containing_scope(s);
     }
 
@@ -2269,6 +2270,7 @@ private:
 
     string func;
     bool consider_calls, consider_provides;
+    bool conditional_rw;
     Scope<Interval> scope;
     const FuncValueBounds &func_bounds;
     // Scope containing the current value definition of let stmts.
@@ -2999,7 +3001,8 @@ private:
 };
 
 map<string, Box> boxes_touched(const Expr &e, Stmt s, bool consider_calls, bool consider_provides,
-                               const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
+                               const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb,
+                               bool conditional_rw) {
     if (!fn.empty() && s.defined()) {
         // Filter things down to the relevant sub-Stmts, so we don't spend a
         // long time reasoning about lets and ifs that don't surround an
@@ -3103,8 +3106,8 @@ map<string, Box> boxes_touched(const Expr &e, Stmt s, bool consider_calls, bool 
     }
 
     // Do calls and provides separately, for better simplification.
-    BoxesTouched calls(consider_calls, false, fn, &scope, fb);
-    BoxesTouched provides(false, consider_provides, fn, &scope, fb);
+    BoxesTouched calls(consider_calls, false, fn, &scope, fb, conditional_rw);
+    BoxesTouched provides(false, consider_provides, fn, &scope, fb, conditional_rw);
 
     if (consider_calls) {
         if (e.defined()) {
@@ -3182,14 +3185,14 @@ map<string, Box> boxes_touched(const Expr &e, Stmt s, bool consider_calls, bool 
 
 Box box_touched(const Expr &e, Stmt s, bool consider_calls, bool consider_provides,
                 const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
-    map<string, Box> boxes = boxes_touched(e, std::move(s), consider_calls, consider_provides, fn, scope, fb);
+    map<string, Box> boxes = boxes_touched(e, std::move(s), consider_calls, consider_provides, fn, scope, fb, true);
     internal_assert(boxes.size() <= 1);
     return boxes[fn];
 }
 }  // namespace
 
 map<string, Box> boxes_required(const Expr &e, const Scope<Interval> &scope, const FuncValueBounds &fb) {
-    return boxes_touched(e, Stmt(), true, false, "", scope, fb);
+    return boxes_touched(e, Stmt(), true, false, "", scope, fb, true);
 }
 
 Box box_required(const Expr &e, const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
@@ -3197,15 +3200,21 @@ Box box_required(const Expr &e, const string &fn, const Scope<Interval> &scope, 
 }
 
 map<string, Box> boxes_required(Stmt s, const Scope<Interval> &scope, const FuncValueBounds &fb) {
-    return boxes_touched(Expr(), std::move(s), true, false, "", scope, fb);
+    return boxes_touched(Expr(), std::move(s), true, false, "", scope, fb, true);
 }
 
 Box box_required(Stmt s, const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
     return box_touched(Expr(), std::move(s), true, false, fn, scope, fb);
 }
 
+Box box_required_nocond(Stmt s, const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
+    map<string, Box> boxes = boxes_touched(Expr(), std::move(s), true, false, fn, scope, fb, false);
+    internal_assert(boxes.size() <= 1);
+    return boxes[fn];
+}
+
 map<string, Box> boxes_provided(const Expr &e, const Scope<Interval> &scope, const FuncValueBounds &fb) {
-    return boxes_touched(e, Stmt(), false, true, "", scope, fb);
+    return boxes_touched(e, Stmt(), false, true, "", scope, fb, true);
 }
 
 Box box_provided(const Expr &e, const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
@@ -3213,7 +3222,7 @@ Box box_provided(const Expr &e, const string &fn, const Scope<Interval> &scope, 
 }
 
 map<string, Box> boxes_provided(Stmt s, const Scope<Interval> &scope, const FuncValueBounds &fb) {
-    return boxes_touched(Expr(), std::move(s), false, true, "", scope, fb);
+    return boxes_touched(Expr(), std::move(s), false, true, "", scope, fb, true);
 }
 
 Box box_provided(Stmt s, const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
@@ -3221,7 +3230,7 @@ Box box_provided(Stmt s, const string &fn, const Scope<Interval> &scope, const F
 }
 
 map<string, Box> boxes_touched(const Expr &e, const Scope<Interval> &scope, const FuncValueBounds &fb) {
-    return boxes_touched(e, Stmt(), true, true, "", scope, fb);
+    return boxes_touched(e, Stmt(), true, true, "", scope, fb, true);
 }
 
 Box box_touched(const Expr &e, const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {
@@ -3229,7 +3238,7 @@ Box box_touched(const Expr &e, const string &fn, const Scope<Interval> &scope, c
 }
 
 map<string, Box> boxes_touched(Stmt s, const Scope<Interval> &scope, const FuncValueBounds &fb) {
-    return boxes_touched(Expr(), std::move(s), true, true, "", scope, fb);
+    return boxes_touched(Expr(), std::move(s), true, true, "", scope, fb, true);
 }
 
 Box box_touched(Stmt s, const string &fn, const Scope<Interval> &scope, const FuncValueBounds &fb) {

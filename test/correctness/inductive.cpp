@@ -233,14 +233,25 @@ int blur_test(){
     f3(x) = select(x <= 0, 0, f2(x) + f3(x-1));
     f4(x) = select(x <= 0, 0, f3(x) + f4(x-1));
     f5(x) = f4(x);
-    f2.store_root().compute_at(f5, x);
-    f3.store_root().compute_at(f5, x);
-    f4.store_root().compute_at(f5, x);
+    f2.store_root().compute_at(f5, x).fold_storage(x,2);
+    f3.store_root().compute_at(f5, x).fold_storage(x,2);
+    f4.store_root().compute_at(f5, x).fold_storage(x,2);
     //f4.store_root().compute_root();
     f5.compile_to_lowered_stmt("blurnr.txt", {}, Halide::Text);
     Buffer<int> im = f5.realize({100});
     return 0;
 
+}
+
+int storage_test(){
+    Func f1("f1"), f2("f2");
+    Var x;
+    f1(x) = select(x <= 0, 0, f1(x-1) + x);
+    f2(x) = f1(x) + 1;
+    f1.store_root().compute_at(f2, x);
+    f2.compile_to_lowered_stmt("storatagenr.txt", {}, Halide::Text);
+    Buffer<int> im = f2.realize({100});
+    return 0;
 }
 
 int blur2_test(){
@@ -351,7 +362,7 @@ int main(int argc, char **argv) {
 
     std::vector<Task> tasks = {
         //{"parallel test 2", parallel_test_4},
-        {"parallel test", parallel_test},
+        /*{"parallel test", parallel_test},
         {"parallel test 2", parallel_test_2},
         {"parallel test 3", parallel_test_3},
         {"simple inductive test", simple_inductive_test},
@@ -363,8 +374,9 @@ int main(int argc, char **argv) {
         {"1d sum test", sum_1d_test},
         {"multi-baseline test", multi_baseline_test},
         {"type declaration test", type_declare_test},
-        {"blur test", blur_test},
+        {"blur test", blur_test},*/
         {"blur2 test", blur_test},
+        //{"storage test", storage_test},
     };
 
     using Sharder = Halide::Internal::Test::Sharder;

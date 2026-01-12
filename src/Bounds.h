@@ -153,6 +153,10 @@ Box box_required(Stmt s, const std::string &fn,
                  const Scope<Interval> &scope = Scope<Interval>::empty_scope(),
                  const FuncValueBounds &func_bounds = empty_func_value_bounds());
 
+Box box_required_nocond(Stmt s, const std::string &fn,
+                 const Scope<Interval> &scope = Scope<Interval>::empty_scope(),
+                 const FuncValueBounds &func_bounds = empty_func_value_bounds());
+
 Box box_provided(const Expr &e, const std::string &fn,
                  const Scope<Interval> &scope = Scope<Interval>::empty_scope(),
                  const FuncValueBounds &func_bounds = empty_func_value_bounds());
