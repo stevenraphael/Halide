@@ -352,6 +352,35 @@ int parallel_test_4(){
     return 0;
 }
 
+int sum_scan() {
+    Func f1("f1"), f2("f2"), f3("f3"), f4("f4"), f5("f5"), in("in");
+    Var x("x"), xo("xo"), xi("xi");
+    in(x) = x + 1;
+    f1(x) = in(x) + in(x + 4);
+    f2(x) = f1(x) + f1(x + 2);
+    f3(x) = f2(x) + f2(x + 1);
+    f4(x) = select(x <= 8, f3(x-8)-f3(x-8), f3(x-8) + f4(x-8));
+    f5(x) = f4(x);
+
+    
+    //f5.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
+    f4.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi).store_root().compute_root();
+    for (Func f :  {f1, f2, f3}) {
+        f.store_root().compute_at(f4, xo).vectorize(x).store_in(MemoryType::Register).fold_storage(x, 16);
+    }
+    f5.compile_to_lowered_stmt("sumnr.txt", {}, Halide::Text);
+    return 0;
+}
+
+int bad_check(){
+    Func f1("f1"), f2("f2");
+    Var x("x");
+    f1(x) = select(x<=0 || x > 10, 0, f1(x-1)+f1(x+1)+x);
+    f2(x) = f1(x);
+    Buffer<int> im = f2.realize({20});
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -375,7 +404,9 @@ int main(int argc, char **argv) {
         {"multi-baseline test", multi_baseline_test},
         {"type declaration test", type_declare_test},
         {"blur test", blur_test},*/
-        {"blur2 test", blur_test},
+        //{"blur2 test", blur_test},
+        {"sum scan test", sum_scan},
+        //{"bad check test", bad_check},
         //{"storage test", storage_test},
     };
 
