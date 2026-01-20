@@ -168,7 +168,7 @@ class RollFunc : public IRMutator {
             Type t = values[i].type();
             Expr old_value =
                 Call::make(t, op->name, old_args, Call::Halide, func.get_contents(), i);
-            values[i] = Call::make(values[i].type(), Call::if_then_else, {is_new, values[i], likely(old_value)}, Call::PureIntrinsic);
+            values[i] = Call::make(values[i].type(), Call::if_then_else, {is_new, likely(values[i]), old_value}, Call::PureIntrinsic);
         }
         if (const Variable *v = op->args[dim].as<Variable>()) {
             // The subtractions above simplify more easily if the loop is rebased to 0.
