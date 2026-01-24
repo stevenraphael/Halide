@@ -353,22 +353,30 @@ int parallel_test_4(){
 }
 
 int sum_scan() {
-    Func f1("f1"), f2("f2"), f3("f3"), f4("f4"), f5("f5"), in("in");
+    Func f4 = Func(Int(32), "f4");
+    Func f1("f1"), f2("f2"), f3("f3"), f5("f5"), in("in");
     Var x("x"), xo("xo"), xi("xi");
     in(x) = x + 1;
     f1(x) = in(x) + in(x + 4);
     f2(x) = f1(x) + f1(x + 2);
     f3(x) = f2(x) + f2(x + 1);
-    f4(x) = select(x <= 8, f3(x-8)-f3(x-8), f3(x-8) + f4(x-8));
-    f5(x) = f4(x);
-
+    f4(x) = select(x < 8, f3(x-8)-f3(x-8), likely(f3(x-8) + f4(x-8)));
+    f5(x) = f4(x) / 36;
+    f5.bound(x, 0, 1024).split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
+    //f4.bound(x, -8, 1024);
+    //f3.bound(x, 0, 1025);
+    //f2.bound(x, 0, 1026);
+    //f1.bound(x, 0, 1028);
     
     //f5.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
-    f4.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi).store_root().compute_root();
+    f4.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi).store_root().compute_at(f5, xo);
     for (Func f :  {f1, f2, f3}) {
-        f.store_root().compute_at(f4, xo).vectorize(x).store_in(MemoryType::Register).fold_storage(x, 16);
+        f.compute_at(f5, xo).vectorize(x).store_in(MemoryType::Register).fold_storage(x, 24);
     }
+    f3.fold_storage(x, 8);
+    f4.fold_storage(x, 16);
     f5.compile_to_lowered_stmt("sumnr.txt", {}, Halide::Text);
+    
     return 0;
 }
 

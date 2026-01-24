@@ -1127,6 +1127,7 @@ void Stage::split(const string &old, const string &outer, const string &inner, c
                 }
 
                 int gcd = split_gcd(function, old_name);
+                std::cout << "GCD of " << old_name << " is " << gcd << "\n";
                 int factor_val;
                 if (const std::optional<int64_t> int_factor = as_const_int(factor)) {
                     int factor_val = static_cast<int>(*int_factor);

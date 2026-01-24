@@ -23,6 +23,7 @@ tests(GROUPS performance
       packed_planar_fusion.cpp
       realize_overhead.cpp
       rgb_interleaved.cpp
+      sum_scan.cpp
       tiled_matmul.cpp
       vectorize.cpp
       wrap.cpp

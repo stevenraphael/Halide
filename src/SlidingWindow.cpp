@@ -158,12 +158,22 @@ class RollFunc : public IRMutator {
         for (Expr &i : args) {
             i = mutate(i);
         }
-        bool sliding_up = old_bounds.max.same_as(new_bounds.max);
+        
+
+        
+        bool sliding_up = equal(simplify(old_bounds.max),new_bounds.max);
+        
         Expr is_new = sliding_up ? new_bounds.min <= args[dim] : args[dim] <= new_bounds.max;
+
+        
         args[dim] -= old_bounds.min;
+        
+        
         vector<Expr> old_args = args;
         Expr old_arg_dim = expand_expr(old_args[dim], scope);
         old_args[dim] = substitute(loop_var, Variable::make(Int(32), loop_var) - 1, old_arg_dim);
+        std::cout<<"old_args[dim]: "<<simplify(old_args[dim])<<"\n";
+        std::cout<<"values[0]:"<<values[0]<<"\n";
         for (int i = 0; i < (int)values.size(); i++) {
             Type t = values[i].type();
             Expr old_value =
@@ -185,7 +195,9 @@ class RollFunc : public IRMutator {
         for (Expr &i : args) {
             i = mutate(i);
         }
+        
         args[dim] -= old_bounds.min;
+        
         return Call::make(op->type, op->name, args, Call::Halide, op->func, op->value_index, op->image, op->param);
     }
 
@@ -481,13 +493,41 @@ class SlidingWindowOnFunctionAndLoop : public IRMutator {
                 this->dim_idx = dim_idx;
                 old_bounds = {min_required, max_required};
                 new_bounds = {new_min, new_max};
-                return op;
+                
             }
+
+            const std::vector<StorageDim> &storage_dims = func.schedule().storage_dims();
+            auto storage_dim_i = std::find_if(storage_dims.begin(), storage_dims.end(),
+                                                [&](const StorageDim &i) { return i.var == func.args()[dim_idx]; });
+            internal_assert(storage_dim_i != storage_dims.end());
+            const StorageDim &storage_dim = *storage_dim_i;
+
+            Expr explicit_factor = 16;//storage_dim.fold_factor;
+            //TODO: add asserts
+            /*if(explicit_factor.defined()&&func.schedule().memory_type() == MemoryType::Register&&can_slide_up){
+                //old_bounds = {max(min_required, max_required - explicit_factor), max_required};
+                old_bounds = {max_required - explicit_factor, max_required};
+                replacements[prefix + dim + ".min"] = old_bounds.min;
+                for (size_t i = 0; i < func.updates().size(); i++) {
+                    string n = func.name() + ".s" + std::to_string(i) + "." + dim;
+                    replacements[n + ".min"] = Variable::make(Int(32), prefix + dim + ".min");
+                }
+                Stmt result = op;
+                if (!func.updates().empty()) {
+                    Box b = box_provided(op->body, func.name());
+                    string n = prefix + dim + ".min";
+                    Expr var = Variable::make(Int(32), n);
+                    result = LetStmt::make(n, min(var, b[dim_idx].min), result);
+                }
+
+                return result;
+            }*/
 
             // If we aren't sliding in registers, we need to update the bounds of
             // the producer to be only the bounds of the region newly computed.
             internal_assert(replacements.empty());
             if (can_slide_up) {
+                // update bound
                 replacements[prefix + dim + ".min"] = new_min;
             } else {
                 replacements[prefix + dim + ".max"] = new_max;

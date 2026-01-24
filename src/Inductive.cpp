@@ -204,6 +204,9 @@ int split_gcd(const Function &fn, const string &var_name) {
                 }
 
             }
+            else {
+                IRVisitor::visit(op);
+            }
         }
     };
 
