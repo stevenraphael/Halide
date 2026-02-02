@@ -429,7 +429,29 @@ protected:
         merge_func_info(&old, func_info, op->condition);
         func_info.clear();
         mutate(op->false_value);
+        // if sum in func_id
+        std::cout<<"before merging func_info in select"<<std::endl;
+        if(analysis.func_id.find("sum") != analysis.func_id.end()){
+            // print out all func_id info
+
+            for (const auto &p : old) {
+                std::cout<<"func info: "<<p.first<<" : used = "<<p.second.used<<", loaded = "<<p.second.loaded<<std::endl;
+            }
+            
+            
+            //std::cout<<"func info of the sum function is: "<<func_info[analysis.func_id.at("sum")].used<<std::endl;
+        }
+        std::cout<<"condition of select is: "<<op->condition<<std::endl;
         merge_func_info(&old, func_info, !op->condition);
+        std::cout<<"after merging func_info in select"<<std::endl;
+        if(analysis.func_id.find("sum") != analysis.func_id.end()){
+            // print out all func_id info
+            for (const auto &p : old) {
+                std::cout<<"func info: "<<p.first<<" : used = "<<p.second.used<<", loaded = "<<p.second.loaded<<std::endl;
+            }
+            
+            //std::cout<<"func info of the sum function is: "<<func_info[analysis.func_id.at("sum")].used<<std::endl;
+        }
         old.swap(func_info);
         mutate(op->condition);  // Check for any calls in the condition
 
@@ -591,6 +613,11 @@ protected:
             body = IfThenElse::make(used, body);
             inner_unbound_use_of_used_or_loaded_vars = true;
 
+            std::cout<<"after visiting ProducerConsumer node name "<<op->name<<std::endl;
+            for (const auto &p : func_info) {
+                std::cout<<"func info: "<<p.first<<" : used = "<<p.second.used<<", loaded = "<<p.second.loaded<<std::endl;
+            }
+
             if (body.same_as(op->body)) {
                 return op;
             } else {
@@ -608,6 +635,10 @@ protected:
                     p.second.used = relax_over_calls(p.second.used, op->name);
                     p.second.loaded = relax_over_calls(p.second.loaded, op->name);
                 }
+            }
+            std::cout<<"after visiting ProducerConsumer node name "<<op->name<<std::endl;
+            for (const auto &p : func_info) {
+                std::cout<<"func info: "<<p.first<<" : used = "<<p.second.used<<", loaded = "<<p.second.loaded<<std::endl;
             }
 
             return s;
@@ -632,6 +663,11 @@ protected:
                 inner_unbound_use_of_used_or_loaded_vars = true;
                 condition = condition && loaded_var(id);
             }
+        }
+
+        std::cout<<"after visiting Realize node name "<<op->name<<std::endl;
+        for (const auto &p : func_info) {
+            std::cout<<"func info: "<<p.first<<" : used = "<<p.second.used<<", loaded = "<<p.second.loaded<<std::endl;
         }
 
         // We don't need to visit the bounds, because there can't be call nodes
@@ -699,6 +735,11 @@ protected:
         merge_func_info(&old, func_info);
         old.swap(func_info);
 
+        std::cout<<"after visiting For node name "<<op->name<<std::endl;
+            for (const auto &p : func_info) {
+                std::cout<<"func info: "<<p.first<<" : used = "<<p.second.used<<", loaded = "<<p.second.loaded<<std::endl;
+            }
+
         if (body.same_as(op->body)) {
             return op;
         } else {
@@ -752,6 +793,24 @@ Stmt skip_stages(const Stmt &stmt,
     // Make a map from Funcs to the first member of any compute_with group they belong to.
     SkipStagesAnalysis analysis(func_id);
     stmt.accept(&analysis);
+
+    //print analysis
+    std::cout << "SkipStagesAnalysis:\n";
+    std::cout << "  interesting_vars: ";
+    for (const auto &v : analysis.interesting_vars) {
+        std::cout << v << " ";
+    }
+    std::cout << "\n";
+    std::cout << "  unconditionally_used_funcs: ";
+    for (const auto &f : analysis.unconditionally_used_funcs) {
+        std::cout << name_for_id[f] << " ";
+    }
+    std::cout << "\n";
+    std::cout << "  conditionally_used_funcs: ";
+    for (const auto &f : analysis.conditionally_used_funcs) {
+        std::cout << name_for_id[f] << " ";
+    }
+    std::cout << "\n";
 
     if (analysis.conditionally_used_funcs.empty()) {
         // Nothing to do. No Funcs can be skipped. Just strip the skip stages

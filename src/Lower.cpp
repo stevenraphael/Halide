@@ -380,6 +380,10 @@ void lower_impl(const vector<Function> &output_funcs,
     s = simplify(s);
     log("Lowering after partitioning loops:", s);
 
+    debug(1) << "Dynamically skipping stages...\n";
+    s = skip_stages(s, outputs, fused_groups, env);
+    log("Lowering after dynamically skipping stages:", s);
+
     debug(1) << "Staging strided loads...\n";
     s = stage_strided_loads(s);
     log("Lowering after staging strided loads:", s);
