@@ -15,6 +15,7 @@ tests(GROUPS performance
       fast_inverse.cpp
       fast_pow.cpp
       fast_sine_cosine.cpp
+      flashattention.cpp
       gpu_half_throughput.cpp
       jit_stress.cpp
       lots_of_inputs.cpp
@@ -44,6 +45,9 @@ tests(GROUPS performance multithreaded
       stack_vs_heap.cpp
       thread_safe_jit_callable.cpp
       )
+
+target_link_libraries(performance_sum_scan PRIVATE Halide::ImageIO)
+
 
 # Make sure that performance tests do not run in parallel with other tests,
 # since doing so might make them flaky.

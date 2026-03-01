@@ -413,6 +413,7 @@ tests(GROUPS correctness multithreaded
 # Make sure the test that needs Halide::ImageIO has it
 target_link_libraries(correctness_image_io PRIVATE Halide::ImageIO)
 
+
 # Make sure the test that needs Halide::ThreadPool has it
 target_link_libraries(correctness_gpu_allocation_cache PRIVATE Halide::ThreadPool)
 

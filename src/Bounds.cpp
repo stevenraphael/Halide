@@ -3260,6 +3260,40 @@ Interval compute_pure_function_definition_value_bounds(
     }
     return result;
 }
+
+
+Interval compute_update_defintion_value_bounds(
+    const Definition &def, const Scope<Interval> &scope, const FuncValueBounds &fb, int dim, const string func_name) {
+    // for now, just return everything
+    const Expr value = def.values()[dim];
+    if (const Select *sel = value.as<Select>()) {
+        const Call *call_true = sel->true_value.as<Call>();
+        const Call *call_false = sel->false_value.as<Call>();
+        if (call_true && call_true->name == func_name && !expr_uses_var(sel->false_value, func_name)) {
+            return bounds_of_expr_in_scope(sel->false_value, scope, fb);
+        } else if (call_false && call_false->name == func_name && !expr_uses_var(sel->true_value, func_name)) {
+            return bounds_of_expr_in_scope(sel->true_value, scope, fb);
+        }
+    } else if (const Min *min = value.as<Min>()) {
+        const Call *call_a = min->a.as<Call>();
+        const Call *call_b = min->b.as<Call>();
+        if (call_a && call_a->name == func_name && !expr_uses_var(min->b, func_name)) {
+            return bounds_of_expr_in_scope(min->b, scope, fb);
+        } else if (call_b && call_b->name == func_name && !expr_uses_var(min->a, func_name)) {
+            return bounds_of_expr_in_scope(min->a, scope, fb);
+        }
+    } else if (const Max *max = value.as<Max>()) {
+        const Call *call_a = max->a.as<Call>();
+        const Call *call_b = max->b.as<Call>();
+        if (call_a && call_a->name == func_name && !expr_uses_var(max->b, func_name)) {
+            return bounds_of_expr_in_scope(max->b, scope, fb);
+        } else if (call_b && call_b->name == func_name && !expr_uses_var(max->a, func_name)) {
+            return bounds_of_expr_in_scope(max->a, scope, fb);
+        }
+    }
+    return Interval::everything();
+    }
+
 }  // namespace
 
 FuncValueBounds compute_function_value_bounds(const vector<string> &order,
@@ -3295,13 +3329,39 @@ FuncValueBounds compute_function_value_bounds(const vector<string> &order,
 
                 fb[key] = result;
             } else {
+                    
+                Scope<Interval> arg_scope;
+                for (size_t k = 0; k < f.args().size(); k++) {
+                    arg_scope.push(f_args[k], Interval::everything());
+                }
+
+                Interval resultpure = compute_pure_function_definition_value_bounds(f.definition(), arg_scope, fb, j);
+                Interval resultupdate;
+                if(f.updates().size() == 100) {
+                    // push the RDom bounds into the scope, so that we can get a better bound on the update value
+
+                    for (const ReductionVariable &r : f.update().schedule().rvars()) {
+                        Interval i = {r.min, r.min+r.extent};
+                        arg_scope.push(r.var, i);
+                    }
+                    resultupdate = compute_update_defintion_value_bounds(f.update(), arg_scope, fb, j, func_name);
+                    // print interval:
+                    std::cout << "Bounds on update value " << j
+                             << " for func " << func_name
+                             << " are: " << resultupdate.min << ", " << resultupdate.max << "\n";
+                } else {
+                    resultupdate = Interval::everything();
+                }
+                result = Interval::make_union(resultpure, resultupdate);
+                Interval result_type;
                 // If the Func is impure, we may still be able to specify a bounds-of-type here
                 Type t = f.output_types()[j].element_of();
                 if ((t.is_uint() || t.is_int()) && t.bits() <= 16) {
-                    result = Interval(t.min(), t.max());
+                    result_type = Interval(t.min(), t.max());
                 } else {
-                    result = Interval::everything();
+                    result_type = Interval::everything();
                 }
+                result = Interval::make_intersection(result, result_type);
                 fb[key] = result;
 
                 // TODO: if a Function is impure, but the RDoms used by the update functions

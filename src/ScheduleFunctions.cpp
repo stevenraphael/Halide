@@ -497,6 +497,7 @@ Stmt build_provide_loop_nest(const map<string, Function> &env,
 
     // Make the (multi-dimensional multi-valued) store node.
     Stmt body = Provide::make(func.name(), values, site, const_true());
+    std::cout<<"building loop nest...";
     if (def.schedule().atomic()) {  // Add atomic node.
         bool any_unordered_parallel = false;
         for (const auto &d : def.schedule().dims()) {
@@ -512,6 +513,7 @@ Stmt build_provide_loop_nest(const map<string, Function> &env,
             // (e.g. vectorization). Vectorization and the like will
             // need to handle atomic nodes specially, by either
             // emitting VectorReduce ops or scalarizing.
+            std::cout<<"made atomic!";
             body = Atomic::make(func.name(), std::string{}, body);
         }
     }

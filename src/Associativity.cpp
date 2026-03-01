@@ -103,25 +103,12 @@ bool associative_op_pattern_match(const Expr &e,
         << "Expr has type " << e.type() << ", while pattern has type " << op.type() << "\n";
     map<string, Expr> result;
     if (expr_match(op, e, result)) {
-        for (const auto &iter : result) {
-            debug(5) << "  " << iter.first << " -> " << iter.second << "\n";
-        }
-        if(result.find("y0") != result.end()){
-            debug(5) << "Found associative ops for " << e << " -> " << op
+        debug(5) << "Found associative ops for " << e << " -> " << op
                  << ", y_part: " << result["y0"] << "\n";
-        }
-        else{
-            debug(5) << "Found associative ops for " << e << " -> " << op << "\n";
-        }
-        
-        //print all keys and values in result
-        
 
         for (size_t i = 0; i < x_names.size(); ++i) {
-            debug(5)<<"here0";
             const auto &iter = result.find("x" + std::to_string(i));
             if (iter != result.end()) {
-                debug(5)<<"found x"<<i;
                 const Variable *xvar = iter->second.as<Variable>();
                 if ((xvar == nullptr) || (xvar->name != x_names[i])) {
                     debug(5) << "...Skipping match since the x_part is different than expected. "
@@ -130,12 +117,9 @@ bool associative_op_pattern_match(const Expr &e,
                 }
             }
         }
-        debug(5)<<"here1";
         for (size_t i = 0; i < y_names.size(); ++i) {
             const auto &iter = result.find("y" + std::to_string(i));
-            debug(5)<<"y part is "<<i;
             if (iter != result.end()) {
-                debug(5) << "Checking y part: " << iter->second << "\n";
                 // Make sure that y_part should not depend on x vars
                 if (expr_uses_vars(iter->second, x_scope)) {
                     debug(5) << "...Skipping match since the y_part depends on x vars\n";
@@ -143,7 +127,6 @@ bool associative_op_pattern_match(const Expr &e,
                 }
             }
         }
-        debug(5)<<"here2";
         for (size_t i = 0; i < x_names.size(); ++i) {
             const auto &iter = result.find("k" + std::to_string(i));
             if (iter != result.end()) {
@@ -154,7 +137,6 @@ bool associative_op_pattern_match(const Expr &e,
                 }
             }
         }
-        debug(5)<<"here";
 
         // Make sure that the new matches are in agreement with any previous matches
         for (const auto &iter : result) {
@@ -187,7 +169,7 @@ bool find_match(const vector<AssociativePattern> &table, const vector<string> &o
     for (const auto &x : op_x_names) {
         x_scope.push(x);
     }
-    std::cout<<"EXPRS IS"<<exprs[0]<<exprs[1];
+
     for (const AssociativePattern &pattern : table) {
         internal_assert(pattern.size() == op_x_names.size());
         map<string, Expr> pattern_match;
@@ -301,14 +283,6 @@ void add_transitive_dependencies(vector<set<int>> &dependencies) {
 // all vertices that are reachable from a given vertex. If a subgraph is fully
 // contained in another subgraph, remove it from the final output.
 vector<set<int>> compute_subgraphs(vector<set<int>> dependencies) {
-    //print out all sets
-    for (size_t i = 0; i < dependencies.size(); ++i) {
-        debug(5) << "Dependencies for " << i << ": {";
-        for (const auto &d : dependencies[i]) {
-            debug(5) << d << ", ";
-        }
-        debug(5) << "}\n";
-    }
     vector<set<int>> subgraphs(dependencies.size());
     for (size_t i = 0; i < dependencies.size(); ++i) {
         // Check if the current subgraph is a subset of another
@@ -319,17 +293,9 @@ vector<set<int>> compute_subgraphs(vector<set<int>> dependencies) {
         bool should_remove = false;
         for (size_t j = 0; j < dependencies.size(); ++j) {
             const auto &other = dependencies[j];
-            if ((i == j) || (current.size() > other.size()) || (j < i && subgraphs[j].empty())) {
-                if(current.size()>other.size()){
-                    debug(5)<<"current size "<<current.size()<<" is greater than other size "<<other.size()<<"\n";
-                }
-                if(j < i && subgraphs[j].empty()){
-                    debug(5)<<"j "<<j<<" is less than i "<<i<<" and subgraphs[j] is empty\n";
-                }
-                //debug(5)<<"Failed to compare subgraph "<<i<<" with subgraph "<<j<<"\n";
+            if ((i == j) || (current.size() > other.size()) || (j < i && subgraphs[i].empty())) {
                 continue;
             }
-            debug(5)<<"Comparing subgraph "<<i<<" with subgraph "<<j<<"\n";
             vector<int> diff;
             // Compute the vertices in the current set that are not contained in the other
             std::set_difference(current.begin(), current.end(), other.begin(), other.end(),
@@ -337,7 +303,6 @@ vector<set<int>> compute_subgraphs(vector<set<int>> dependencies) {
             if (diff.empty()) {
                 // 'current' is fully contained in 'other'
                 should_remove = true;
-                debug(5)<<"Subgraph "<<i<<" is fully contained in subgraph "<<j<<", removing it\n";
                 break;
             }
         }

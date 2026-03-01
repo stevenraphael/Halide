@@ -315,7 +315,6 @@ Tuple argmin(const RDom &r, Expr e, const Func &f) {
     f(v.free_vars) = initial_tup;
     Expr better = e < f(v.free_vars)[value_index];
     Tuple x = select(better, update_tup, f(v.free_vars));
-    std::cout<<x[0]<<x[1];
     f(v.free_vars) = select(better, update_tup, f(v.free_vars));
     return f(v.call_args);
 }

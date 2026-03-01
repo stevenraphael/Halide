@@ -12,6 +12,7 @@
 #include "Qualify.h"
 #include "Scope.h"
 #include "Simplify.h"
+#include "Substitute.h"
 
 #include <algorithm>
 #include <iterator>
@@ -1019,7 +1020,8 @@ public:
             for (const auto &b1 : s.bounds) {
                 const Box &b = b1.second;
                 for (const auto &cval : s.exprs) {
-                    s.bounds[b1.first] = expand_to_include_base_case(s.func.args(), cval.value, s.func.name(), b);
+                    debug(1)<<substitute_in_all_lets(cval.value);
+                    s.bounds[b1.first] = expand_to_include_base_case(s.func.args(), substitute_in_all_lets(cval.value), s.func.name(), b);
                 }
             }
         }

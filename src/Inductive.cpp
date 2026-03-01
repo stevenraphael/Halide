@@ -32,8 +32,37 @@ class BaseCaseSolver : public IRVisitor {
 
     int nested_select = 0;
 
+    void visit(const Select *op) override {
+        if (nested_select == 1) {
+            IRVisitor::visit(op);
+            return;
+        }
+        nested_select += 1;
+        vector<Interval> old_intervals = condition_intervals;
+        for (size_t i = 0; i < vars.size(); i++) {
+            condition_intervals[i] = Interval::make_intersection(old_intervals[i], solve_for_outer_interval(simplify(op->condition), vars[i]));
+            bounds.push(vars[i], condition_intervals[i]);
+        }
+
+        op->true_value.accept(this);
+        for (size_t i = 0; i < vars.size(); i++) {
+            condition_intervals[i] = Interval::make_intersection(old_intervals[i], solve_for_outer_interval(simplify(!op->condition), vars[i]));
+            bounds.pop(vars[i]);
+            bounds.push(vars[i], condition_intervals[i]);
+        }
+        op->false_value.accept(this);
+        condition_intervals = old_intervals;
+        for (const auto &var : vars) {
+            bounds.pop(var);
+        }
+        nested_select -= 1;
+    }
     void visit(const Call *op) override {
         if (op->is_intrinsic(Call::if_then_else)) {
+            if (nested_select == 1) {
+                IRVisitor::visit(op);
+                return;
+            }
             nested_select += 1;
             vector<Interval> old_intervals = condition_intervals;
             for (size_t i = 0; i < vars.size(); i++) {
