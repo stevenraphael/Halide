@@ -43,7 +43,7 @@ class BaseCaseSolver : public IRVisitor {
             condition_intervals[i] = Interval::make_intersection(old_intervals[i], solve_for_outer_interval(simplify(op->condition), vars[i]));
             bounds.push(vars[i], condition_intervals[i]);
         }
-
+        
         op->true_value.accept(this);
         for (size_t i = 0; i < vars.size(); i++) {
             condition_intervals[i] = Interval::make_intersection(old_intervals[i], solve_for_outer_interval(simplify(!op->condition), vars[i]));
@@ -389,6 +389,11 @@ bool can_be_pure(const std::vector<std::string> &vars, const Function &fn, const
 }
 
 Box expand_to_include_base_case(const vector<string> &vars, const Expr &RHS, const string &func, const Box &box_required) {
+    Expr x = Variable::make(Int(32), "select_cond");
+        Expr y = Variable::make(Int(32), "select_cond_neg");
+        Expr example_cond = x+y<10;
+        Interval example_interval = solve_for_outer_interval(simplify(example_cond), "select_cond");
+        std::cout<<"example interval: "<<example_interval.min<<" "<<example_interval.max<<std::endl;
     Expr substed = substitute_in_all_lets(RHS);
     Box box2 = box_required;
     BaseCaseSolver b(vars, func, box_required.bounds);

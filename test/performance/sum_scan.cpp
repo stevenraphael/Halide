@@ -72,19 +72,14 @@ Func sum_scan_inductive(Func input, Expr length) {
     Func f4 = Func(Int(32), "f4");
     Func f1("f1"), f2("f2"), f3("f3"), f5("f5"), in("in");
     Var x("x"), xo("xo"), xi("xi");
+    // compute prefix sum in f4 in stages with SIMD
     in(x) = x + 1;
     f1(x) = input(x) + input(x + 3);
     f2(x) = f1(x) + f1(x + 2);
     f3(x) = f2(x) + f2(x + 2);
-    f4(x) = select(x < 8, 0, likely(f3(x) + f4(x-8)));
+    f4(x) = select(x < 8, f3(x), likely(f3(x) + f4(x-8)));
     f5(x) = f4(x) / 4;
     f5.bound(x, 0, length).split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
-    //f4.bound(x, -8, 1024);
-    //f3.bound(x, 0, 1025);
-    //f2.bound(x, 0, 1026);
-    //f1.bound(x, 0, 1028);
-    
-    //f5.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
     f4.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi).store_root().compute_at(f5, xo).fold_storage(x, 16);
     for (Func f :  {f1, f2, f3}) {
         f.compute_at(f5, xo).vectorize(x).store_in(MemoryType::Register);//.fold_storage(x, 24);
@@ -124,30 +119,88 @@ Func sum_scan_bad(Func input, Expr length) {
 }
 
 
+Func sum_scan_simple_inductive(Func input, Expr length) {
+    Func f4 = Func(Int(32), "f4");
+    Func f5("f5");
+    Var x("x"), xo("xo"), xi("xi");
+    RDom r(1, length / 8 - 1);
+    RDom ri(0, 8);
+    // compute prefix sum in f4 in stages with SIMD
+
+
+    f4(x) = select(x < 1, input(x), likely(input(x) + f4(x - 1)));
+    // divide prefix sum by 4 to get the final result
+    f5(x) = f4(x) / 4;
+    f5.bound(x, 0, length);//.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
+    f4.store_root().compute_at(f5, x).fold_storage(x, 2);
+    return f5;
+}
+
+Func sum_scan_simple_rdom(Func input, Expr length) {
+    Func f4 = Func(Int(32), "f4");
+    Func f5("f5");
+    Var x("x"), xo("xo"), xi("xi");
+    RDom r(0, length);
+    RDom ri(0, 8);
+    // compute prefix sum in f4 in stages with SIMD
+
+
+    f4(x) = undef<int>();
+    f4(0) = input(0);
+    f4(r) = input(r) + f4(r-1);
+    // divide prefix sum by 4 to get the final result
+    f5(x) = f4(x) / 4;
+    f5.bound(x, 0, length).split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
+    f4.compute_root();
+    return f5;
+}
+
+
 Func sum_scan_normal(Func input, Expr length) {
     Func f4 = Func(Int(32), "f4");
     Func f1("f1"), f2("f2"), f3("f3"), f5("f5"), in("in");
     Var x("x"), xo("xo"), xi("xi");
+    // compute prefix sum in f4 in stages with SIMD
     in(x) = x + 1;
     f1(x) = input(x) + input(x + 4);
     f2(x) = f1(x) + f1(x + 2);
     f3(x) = f2(x) + f2(x + 1);
-    f4(x) = select(x < 8, f3(x)-f3(x), likely(f3(x) + f4(x-8)));
+    f4(x) = select(x < 8, f3(x), likely(f3(x) + f4(x-8)));
+    // divide prefix sum by 4 to get the final result
     f5(x) = f4(x) / 4;
     f5.bound(x, 0, length).split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
-    //f4.bound(x, -8, 1024);
-    //f3.bound(x, 0, 1025);
-    //f2.bound(x, 0, 1026);
-    //f1.bound(x, 0, 1028);
-    
-    //f5.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
     f4.split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi).compute_root();
     for (Func f :  {f1, f2, f3}) {
-        f.compute_at(f4, xo).vectorize(x).store_in(MemoryType::Register).fold_storage(x, 24);
+        f.compute_at(f4, xo).vectorize(x).store_in(MemoryType::Register).fold_storage(x, 16);
     }
-    //f3.fold_storage(x, 8);
-    //f4.fold_storage(x, 16);
+    return f5;
+}
 
+Func sum_scan_normal_rvar(Func input, Expr length) {
+    Func f4 = Func(Int(32), "f4");
+    Func f1("f1"), f2("f2"), f3("f3"), f5("f5"), in("in");
+    Var x("x"), xo("xo"), xi("xi");
+    RDom r(8, length);
+    RDom r0(1, 7);
+    RVar ri("ri"), ro("ro");
+    // compute prefix sum in f4 in stages with SIMD
+    in(x) = x + 1;
+    f1(x) = input(x) + input(x + 4);
+    f2(x) = f1(x) + f1(x + 2);
+    f3(x) = f2(x) + f2(x + 1);
+    f4(x) = undef<int>();
+    f4(0)=0;
+    f4(r0) = input(r0)+f4(r0-1);
+    f4(r) = f3(r) + f4(r-8);
+    //f4(x) = select(x < 8, f3(x)-f3(x), likely(f3(x) + f4(x-8)));
+    // divide prefix sum by 4 to get the final result
+    f5(x) = f4(x) / 4;
+    f5.bound(x, 0, length).split(x, xo, xi, 8, TailStrategy::RoundUp).vectorize(xi);
+    f4.compute_root();
+    f4.update(1).split(r,ro,ri,8).allow_race_conditions().vectorize(ri,8);//.compute_root();
+    for (Func f :  {f1, f2, f3}) {
+        f.compute_at(f4, ro).vectorize(x).store_in(MemoryType::Register).fold_storage(x, 16);
+    }
     return f5;
 }
 
@@ -539,14 +592,14 @@ bool sum_normal(){
 
     Func result = sum_scan_normal(Func(A), length);
 
-    Buffer<int> a_buf(length + 8);
-    for (int i = 0; i < length + 8; ++i) {
+    Buffer<int> a_buf(length + 16);
+    for (int i = 0; i < length + 16; ++i) {
         a_buf(i) = i + 1;
     }
     A.set(a_buf);
 
     Buffer<int> out(length);
-    auto time = Tools::benchmark(5,5, [&]() {
+    auto time = Tools::benchmark(10, 10, [&]() {
         result.realize(out);
     });
     std::cout << "Exec time: " << time << "\n";
@@ -560,14 +613,14 @@ bool sum_inductive(){
 
     Func result = sum_scan_inductive(Func(A), length);
 
-    Buffer<int> a_buf(length + 8);
-    for (int i = 0; i < length + 8; ++i) {
+    Buffer<int> a_buf(length + 16);
+    for (int i = 0; i < length + 16; ++i) {
         a_buf(i) = i + 1;
     }
     A.set(a_buf);
 
     Buffer<int> out(length);
-    auto time = Tools::benchmark(5, 5, [&]() {
+    auto time = Tools::benchmark(10, 10, [&]() {
         result.realize(out);
     });
     std::cout << "Exec time: " << time << "\n";
@@ -1814,9 +1867,9 @@ bool diff_blur_2d_good_full(){
 bool diff_blur_2d_bad_full(){
     const int row = 1024;
     const int acc = 1024;
-    const int depth = 64; 
+    const int depth = 64*2; 
     const int winsize = 15;
-    const int tilesize = 24;
+    const int tilesize = 64;
 
     ImageParam A(Int(32), 2, "input0");
     ImageParam B(Int(32), 2, "input1");
@@ -2088,8 +2141,15 @@ int main(int argc, char **argv) {
     //diff_blur_1d_bad();
 
 
-    MergeBad();
+    //MergeBad();
     //diff_blur_2d_good_full();
+    //diff_blur_2d_good_full();
+    //sum_inductive();
+
+    sum_normal();
+    sum_inductive();
+    sum_normal();
+    sum_inductive();
 
 
     //diff_blur_2d_bad_full();
