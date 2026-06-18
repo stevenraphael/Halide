@@ -2212,6 +2212,7 @@ TEST_APPS=\
 	resize \
 	resnet_50 \
 	stencil_chain \
+	stereobm \
 	wavelet
 
 TEST_APPS_DEPS=$(TEST_APPS:%=%_test_app)
