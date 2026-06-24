@@ -1033,7 +1033,9 @@ int Function::dimensions() const {
 }
 
 int Function::outputs() const {
-    return (int)output_types().size();
+    return (has_pure_definition() || has_extern_definition()) ?
+               (int)output_types().size() :
+               (int)required_types().size();
 }
 
 const std::vector<Type> &Function::output_types() const {
