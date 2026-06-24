@@ -76,6 +76,7 @@ tests(
     incomplete_target.cpp
     inductive_2d_arbitrary.cpp
     inductive_cond_nested.cpp
+    inductive_cond_nested_select.cpp
     inductive_cond_self_reference.cpp
     inductive_loop_1.cpp
     inductive_loop_2.cpp
