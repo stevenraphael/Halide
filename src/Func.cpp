@@ -3428,6 +3428,10 @@ FuncTupleElementRef FuncRef::operator[](int i) const {
         << "Can't index into a reference to Func \"" << func.name()
         << "\", because it does not return a Tuple.\n";
 
+    user_assert(!func.required_types().empty() || !func.output_types().empty())
+        << "Can't index into a reference to Func \"" << func.name()
+        << "\", because it does not have an explicitly defined type.\n";
+
     user_assert(i >= 0 && i < func.outputs())
         << "Tuple index out of range in reference to Func \"" << func.name() << "\".\n";
 
