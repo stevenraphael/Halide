@@ -849,6 +849,7 @@ RUNTIME_CPP_COMPONENTS = \
   force_include_types \
   fuchsia_clock \
   fuchsia_host_cpu_count \
+  fuchsia_thread_id \
   fuchsia_yield \
   gpu_device_selection \
   halide_buffer_t \
@@ -860,8 +861,12 @@ RUNTIME_CPP_COMPONENTS = \
   ios_io \
   linux_aarch64_cpu_features \
   linux_arm_cpu_features \
+  linux_arm_thread_id \
   linux_clock \
   linux_host_cpu_count \
+  linux_powerpc_thread_id \
+  linux_riscv_thread_id \
+  linux_x86_thread_id \
   linux_yield \
   metal \
   metal_objc_arm \
@@ -876,6 +881,7 @@ RUNTIME_CPP_COMPONENTS = \
   osx_clock \
   osx_get_symbol \
   osx_host_cpu_count \
+  osx_thread_id \
   osx_yield \
   posix_aligned_alloc \
   posix_allocator \
@@ -906,6 +912,7 @@ RUNTIME_CPP_COMPONENTS = \
   tracing \
   vulkan \
   wasm_cpu_features \
+  wasm_thread_id \
   webgpu_dawn \
   webgpu_emscripten \
   windows_aarch64_cpu_features_arm \
