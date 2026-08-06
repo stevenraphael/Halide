@@ -47,6 +47,19 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    // Pin both backends to the same thread count for a fair comparison.
+    // NUM_THREADS env var (default 1: this is a small image, so single-threaded
+    // is both the most stable and the fastest configuration for both backends).
+    int num_threads = 1;
+    if (const char *nt = getenv("NUM_THREADS")) {
+        num_threads = std::max(1, atoi(nt));
+    }
+    halide_set_num_threads(num_threads);
+#if STEREOBM_BUILD_OPENCV
+    cv::setNumThreads(num_threads);
+#endif
+    printf("threads: %d\n", num_threads);
+
     Halide::Runtime::Buffer<uint8_t, 2> left, right;
 
 #if STEREOBM_BUILD_OPENCV
