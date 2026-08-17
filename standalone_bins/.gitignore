@@ -1,0 +1,9 @@
+# This folder ships only sources/scripts/inputs on the halide-app-test branch.
+# Everything else here (compiled benchmark binaries, libHalide.so.22, libtbb,
+# tarballs, editor/agent dirs, helper scripts) is a build artifact or
+# machine-local -- ignore all, then allow-list exactly what belongs in git.
+*
+!.gitignore
+!Makefile
+!run_tests.sh
+!*.png

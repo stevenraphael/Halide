@@ -66,6 +66,12 @@ class BaseCaseSolver : public IRVisitor {
                 }
                 self->visit_base(inner_op);
             });
+            {
+                std::ostringstream oss;
+                oss << op->args[0];
+                fprintf(stderr, "DEBUG: outer if_then_else cond=%s left_recurse=%d right_recurse=%d nested_select=%d\n",
+                        oss.str().c_str(), (int)left_recurse, (int)right_recurse, nested_select);
+            }
             // Again, this check is theoretically unnecessary
             user_assert(!(left_recurse && right_recurse)) << "Select node in inductive function " << func << " does not have a base case";
 
