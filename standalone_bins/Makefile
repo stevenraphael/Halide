@@ -96,14 +96,49 @@ stereobm_jit: $(SRC)/stereobm_jit.cpp $(SUP)/bench_harness.h
 	$(CXX) $(CXXFLAGS) $< $(LDFLAGS) $(IMGIO) -o $@
 endif
 
-# Optional CUDA benches (need nvcc / a CUDA device at run time).
-gpu: check-distrib mamba_gpu_batched prefixsum_gpu prefixsum_gpu_nonassoc
-	@echo "== built GPU benches (run with a CUDA device present) =="
-mamba_gpu_batched prefixsum_gpu prefixsum_gpu_nonassoc: %: $(SRC)/%.cpp $(SUP)/bench_harness.h
+# --- GPU benches (prefix-sum + mamba) ---
+# The Halide ones JIT PTX at runtime, so they build with just g++ + libHalide and
+# need only the CUDA driver present to RUN. The Thrust/CUB prefix-sum baseline is
+# pure CUDA and needs nvcc at build time. SM_ARCH must match the run GPU's compute
+# capability (A10G = sm_86); the Halide sources also bake CUDACapability86.
+SM_ARCH     ?= sm_86
+HAVE_NVCC   := $(shell command -v nvcc >/dev/null 2>&1 && echo 1)
+# Official mamba v1 selective-scan CUDA source (git clone state-spaces/mamba);
+# override if you cloned elsewhere. Only needed for the mamba vendor baseline.
+MAMBA_SRC   ?= $(HOME)/mamba_src/csrc/selective_scan
+GPU_HALIDE  := prefixsum_gpu prefixsum_gpu_nonassoc mamba_gpu_batched mamba_gpu_2stage
+GPU_VENDOR  :=
+ifeq ($(HAVE_NVCC),1)
+GPU_VENDOR  += prefixsum_gpu_thrust
+ifneq ($(wildcard $(MAMBA_SRC)/selective_scan_fwd_kernel.cuh),)
+GPU_VENDOR  += mamba_v1_bench
+endif
+endif
+
+gpu: check-distrib $(GPU_HALIDE) $(GPU_VENDOR)
+	@echo "== built GPU benches: $(GPU_HALIDE) $(GPU_VENDOR) =="
+	@[ "$(HAVE_NVCC)" = 1 ] || echo "   (nvcc not found -> Thrust/CUB prefix-sum baseline skipped)"
+	@echo "   prefixsum:  ./prefixsum_gpu 1048576 8 4096 /tmp/pfx.bin && ./prefixsum_gpu_thrust /tmp/pfx.bin"
+	@echo "   mamba    :  USE_GPU=1 D=2048 N=16 T=8192 ./mamba_ssm ; ./mamba_gpu_batched 64 2048 8192"
+	@echo "   mamba vendor: ./mamba_v1_bench 2048 16 8192 8   (CHECK=1 to validate)"
+	@[ -n "$(wildcard $(MAMBA_SRC)/selective_scan_fwd_kernel.cuh)" ] || echo "   (mamba_v1_bench skipped: clone state-spaces/mamba to $(MAMBA_SRC) or set MAMBA_SRC)"
+
+$(GPU_HALIDE): %: $(SRC)/%.cpp $(SUP)/bench_harness.h
 	$(CXX) $(CXXFLAGS) $< $(LDFLAGS) -o $@
+
+# Thrust/CUB vendor baseline (needs CUDA toolkit; static cudart so only the driver
+# is needed at run time).
+prefixsum_gpu_thrust: $(SRC)/prefixsum_gpu_thrust.cu
+	nvcc -O3 -std=c++17 -arch=$(SM_ARCH) --cudart static $< -o $@
+
+# Official mamba v1 selective-scan CUDA kernel, driven torch-free (c10 shimmed).
+# Needs the mamba source cloned at MAMBA_SRC.
+mamba_v1_bench: $(SRC)/mamba_v1_bench.cu
+	nvcc -O3 -std=c++17 -arch=$(SM_ARCH) --expt-relaxed-constexpr \
+	  -I $(MAMBA_SRC) -I $(SRC)/mamba_v1_shims -I $(SUP) $< -o $@
 
 run: all
 	./run_tests.sh
 
 clean:
-	rm -f $(CORE) $(OPT) mamba_gpu_batched prefixsum_gpu prefixsum_gpu_nonassoc
+	rm -f $(CORE) $(OPT) $(GPU_HALIDE) prefixsum_gpu_thrust mamba_v1_bench

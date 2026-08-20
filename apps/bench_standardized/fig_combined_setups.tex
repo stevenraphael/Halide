@@ -1,0 +1,69 @@
+% Combined per-setup figure: two bars per setup -- inductive FOLDED and inductive
+% UNFOLDED -- both measured against the SAME non-inductive baseline. The gap
+% between the two bars is the contribution of storage folding on top of fusion.
+% Data sidecar: combined_setups.dat  (regenerate: plot_setups.py --combined-dat).
+% Preamble needs: \usepackage{pgfplots}\usepackage{pgfplotstable}\pgfplotsset{compat=1.16}
+
+\definecolor{cFold}{HTML}{4C72B0}
+\definecolor{cUnfold}{HTML}{DD8452}
+
+\pgfplotstableread[col sep=tab]{combined_setups.dat}\combtable
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      xbar, bar width=5pt,
+      width=8.6cm, height=14.0cm,
+      xmin=0, xmax=6.6, ymin=-0.6, ymax=16.6,
+      y dir=reverse,
+      ytick={0,1,...,16},
+      yticklabels from table={\combtable}{label},
+      y tick label style={font=\footnotesize},
+      xtick={0,1,2,3,4,5},
+      xticklabel={\pgfmathprintnumber{\tick}$\times$},
+      x tick label style={font=\footnotesize},
+      xmajorgrids, xminorgrids=false,
+      grid style={draw=black!10, line width=0.4pt},
+      xlabel={speedup vs.\ non-inductive baseline (bar: geomean over sweep)},
+      xlabel style={font=\footnotesize},
+      axis lines=left, axis line style={-},
+      y axis line style={draw=none}, ytick style={draw=none},
+      tick align=outside, xtick pos=bottom,
+      clip=false,
+      enlarge y limits=false,
+      legend style={at={(0.985,0.015)}, anchor=south east, font=\footnotesize,
+                    draw=black!25, /tikz/every even column/.append style={column sep=6pt}},
+      legend cell align=left,
+      area legend,        % plain filled squares in the legend (no error-mark glyph)
+      reverse legend,     % show unfolded above folded
+      nodes near coords align={horizontal},
+      every node near coord/.append style={font=\scriptsize, anchor=west, xshift=2pt},
+      error bars/error bar style={line width=0.7pt, color=black},
+      error bars/error mark options={rotate=90, mark size=2.5pt,
+                                     line width=0.7pt, color=black},
+    ]
+      % parity reference
+      \draw[dashed, black!45, line width=0.6pt] (axis cs:1,-0.6) -- (axis cs:1,16.6);
+
+      % inductive FOLDED
+      \addplot+[xbar, fill=cFold, draw=white, line width=0.3pt,
+                error bars/.cd, x dir=both, x explicit]
+        table[x=fgm, y=idx, x error plus=fep, x error minus=fem]{\combtable};
+      \addlegendentry{inductive folded}
+
+      % inductive UNFOLDED
+      \addplot+[xbar, fill=cUnfold, draw=white, line width=0.3pt,
+                error bars/.cd, x dir=both, x explicit]
+        table[x=ugm, y=idx, x error plus=uep, x error minus=uem]{\combtable};
+      \addlegendentry{inductive unfolded}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Storage folding vs.\ fusion, per qualitatively-distinct setup. Both the
+    inductive \emph{folded} and inductive \emph{unfolded} implementations are shown
+    as median-time speedups over the \emph{same} non-inductive formulation (bars are
+    the geometric mean over the parameters swept in each setup). The unfolded bar
+    isolates the gain from fusion alone; the extra length of the folded bar is the
+    contribution of storage folding. Dashed line marks parity.}
+  \label{fig:combined-setups}
+\end{figure}

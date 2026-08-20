@@ -23,6 +23,7 @@
 #include "HalideBuffer.h"
 #include "bench_harness.h"
 #include "halide_image_io.h"
+#include "mem_probe.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -345,6 +346,13 @@ int main(int argc, char **argv) {
     hb::Stats s_unfold = hb::bench([&] { unfold_pipe.realize(ou); });
     hb::Stats s_s4 = hb::bench([&] { s4_pipe.realize(os4); });
 
+    // Measured peak internal-heap footprint per variant (untimed, custom
+    // allocator; output images are user-supplied, allocated outside realize, so
+    // only the pipeline's SAD-window scratch is counted).
+    const double meas_fold = hb::measure_jit_peak(fold_pipe, [&] { fold_pipe.realize(of); });
+    const double meas_unf = hb::measure_jit_peak(unfold_pipe, [&] { unfold_pipe.realize(ou); });
+    const double meas_s4 = hb::measure_jit_peak(s4_pipe, [&] { s4_pipe.realize(os4); });
+
     // Correctness: folded and unfolded must be bit-identical (same math). Schedule4
     // is the non-inductive variant and must match too (bit-for-bit per its design).
     size_t mism = 0, mism_s4 = 0;
@@ -389,7 +397,7 @@ int main(int argc, char **argv) {
 #endif
 
     hb::print_row("inductive UNFOLDED (fold y -> H)", s_unfold, mpix / (s_unfold.min * 1e-3),
-                  "Mpix/s", bytes_unf, (double)mism, ok,
+                  "Mpix/s", meas_unf, (double)mism, ok,
 #if STEREOBM_BUILD_OPENCV
                   hb::verdict(s_unfold.min, s_cv.min),
 #else
@@ -397,17 +405,12 @@ int main(int argc, char **argv) {
 #endif
                   bytes_unf);
     hb::print_row("inductive FOLDED (fold y -> 1)", s_fold, mpix / (s_fold.min * 1e-3),
-                  "Mpix/s", bytes_fold, (double)mism, ok, hb::verdict(s_fold.min, s_unfold.min), bytes_unf);
+                  "Mpix/s", meas_fold, (double)mism, ok, hb::verdict(s_fold.min, s_unfold.min), bytes_unf);
     // Schedule4: non-inductive sliding-RDom competitor. state = VW*T*N per pass
     // (vsum + cSAD), the tile-sized window storage folding avoids. Verdict is vs
     // the inductive FOLDED variant (the whole point: same result, more memory).
-    {
-        int VW = vector_width > 0 ? vector_width : native_lanes;
-        if (depth % VW != 0) VW = depth;
-        const double bytes_s4 = 2.0 * (double)VW * tilesize * ytilesize * 2.0;
-        hb::print_row("schedule4 (non-inductive, RDom slide)", s_s4, mpix / (s_s4.min * 1e-3),
-                      "Mpix/s", bytes_s4, (double)mism_s4, mism_s4 == 0,
-                      hb::verdict(s_fold.min, s_s4.min), bytes_unf);
-    }
+    hb::print_row("schedule4 (non-inductive, RDom slide)", s_s4, mpix / (s_s4.min * 1e-3),
+                  "Mpix/s", meas_s4, (double)mism_s4, mism_s4 == 0,
+                  hb::verdict(s_fold.min, s_s4.min), bytes_unf);
     return (ok && mism_s4 == 0) ? 0 : 1;
 }

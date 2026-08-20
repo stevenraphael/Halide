@@ -1,0 +1,4 @@
+idx	label	halide	thrust	cub
+0	67M	28.0	36.8	60.2
+1	268M	39.3	39.4	60.5
+2	1.07B	37.5	nan	nan

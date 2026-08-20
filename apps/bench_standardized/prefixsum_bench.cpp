@@ -7,8 +7,10 @@
 // compute_at(x).store_at(y).fold_storage(x, 1) -- a single accumulator
 // register per row, no materialized prefix_sum array at all. Single-core
 // (no .parallel) to match a straight numpy comparison.
-#include "../support/bench_harness.h"
 #include "Halide.h"
+
+#include "../support/bench_harness.h"
+#include "../support/mem_probe.h"
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -42,9 +44,10 @@ int main(int argc, char **argv) {
 
         hb::Stats s_bench = hb::bench([&] { output.realize(result); });
 
-        // Analytic footprint: fold_storage(x,1) keeps one accumulator per row
-        // (O(H)); a materialized prefix_sum would be O(W*H) (see prefixsum_bench_rdom).
-        const double bytes_fold = (double)H * 1 * 4;
+        // Measured peak internal-heap footprint (untimed, custom allocator): the
+        // actual bytes Halide allocates for prefix_sum's scratch (the result buffer
+        // is user-supplied and allocated outside realize, so it is not counted).
+        const double meas_bytes = hb::measure_jit_peak(output, [&] { output.realize(result); });
         // Unfolded footprint = the full prefix trajectory O(W*H) folding removes;
         // the roofline x-axis (dimension roles: W = recurrence length, H = batch).
         const double fp_unfold = (double)W * H * 4;
@@ -59,7 +62,7 @@ int main(int argc, char **argv) {
         const char *label = unfolded ? (shr ? "inductive UNFOLDED (>>2 consumer)" : "inductive UNFOLDED (fold x -> W)") : (shr ? "inductive FOLDED (>>2 consumer)" : "inductive FOLDED (fold x -> 1 accum)");
         hb::print_row(label, s_bench,
                       (W * (double)H) / (s_bench.min * 1e3), "Mpix/s",
-                      unfolded ? fp_unfold : bytes_fold, 0.0, true, "", fp_unfold);
+                      meas_bytes, 0.0, true, "", fp_unfold);
 
         // Dump the input array (same formula as `input(x, y) = x + y` above)
         // and the resulting output, so bench_numpy.py can run on identical

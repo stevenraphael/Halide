@@ -9,8 +9,10 @@
 // materializes a full row of prefix_sum (not folded to a single register).
 // Single-core (no .parallel), same as prefixsum_bench.cpp, so the two are
 // directly comparable.
-#include "../support/bench_harness.h"
 #include "Halide.h"
+
+#include "../support/bench_harness.h"
+#include "../support/mem_probe.h"
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -46,6 +48,11 @@ int main(int argc, char **argv) {
 
         hb::Stats s_bench = hb::bench([&] { output.realize(result); });
 
+        // Measured peak internal-heap footprint (untimed, custom allocator): the
+        // actual prefix_sum scratch Halide allocates (one materialized O(W) row per
+        // live parallel task -- reused across y -- not the whole O(W*H) trajectory).
+        const double meas_bytes = hb::measure_jit_peak(output, [&] { output.realize(result); });
+
         // Compare against the reference data dumped by prefixsum_bench.cpp.
         int n_mismatch = -1;  // -1 => reference file absent
         FILE *f = fopen(data_path, "rb");
@@ -63,11 +70,6 @@ int main(int argc, char **argv) {
                     if (result(xx, yy) != halide_out[yy * W + xx]) n_mismatch++;
         }
 
-        // Non-inductive RDom materializes a full prefix row (O(W)) for each of the
-        // H rows -> O(W*H) trajectory, vs the inductive single-accumulator fold
-        // (O(H)). Counted total-across-rows to match the inductive binaries'
-        // state_MB convention (bytes_fold = H*4, unfolded = W*H*4).
-        const double bytes_mat = (double)W * H * 4;
         // Unfolded footprint = full prefix trajectory O(W*H) (roofline x-axis;
         // matches prefixsum_bench so their rows share one fp/LLC point).
         const double fp_unfold = (double)W * H * 4;
@@ -78,7 +80,7 @@ int main(int argc, char **argv) {
         hb::print_spec_header("prefixsum_bench_rdom", "host", note);
         hb::print_row(shr ? "non-inductive mat (>>2 consumer)" : "non-inductive (RDom, materialize row)", s_bench,
                       (W * (double)H) / (s_bench.min * 1e3), "Mpix/s",
-                      bytes_mat, (double)(n_mismatch < 0 ? 0 : n_mismatch), n_mismatch == 0, "", fp_unfold);
+                      meas_bytes, (double)(n_mismatch < 0 ? 0 : n_mismatch), n_mismatch == 0, "", fp_unfold);
 
         return 0;
     } catch (const Halide::Error &e) {

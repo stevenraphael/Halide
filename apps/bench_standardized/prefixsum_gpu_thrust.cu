@@ -7,6 +7,7 @@
 // Build:  nvcc -O3 -std=c++17 prefixsum_gpu_thrust.cu -o prefixsum_gpu_thrust
 // Run:    ./prefixsum_gpu_thrust /tmp/prefixsum_gpu_data.bin
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>

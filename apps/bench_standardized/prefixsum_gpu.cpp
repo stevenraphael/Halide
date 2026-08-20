@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
     int C = W / L;  // number of time chunks (parallel across GPU blocks)
 
     try {
-        Target target = get_host_target().with_feature(Target::CUDA).with_feature(Target::CUDACapability89);
+        Target target = get_host_target().with_feature(Target::CUDA).with_feature(Target::CUDACapability86);
 
         Var s("s"), j("j"), k("k");
         // Real input in DRAM (lane s = dim0, contiguous) so memory traffic matches

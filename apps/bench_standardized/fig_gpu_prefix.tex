@@ -1,0 +1,59 @@
+% GPU batched prefix-scan throughput: the Halide inductive two-stage scan vs.
+% NVIDIA vendor scans, on an A10G (sm_86). Thrust inclusive_scan_by_key is the
+% like-for-like SEGMENTED competitor; CUB DeviceScan::InclusiveSum is a single
+% unsegmented array -- a hardware-bandwidth reference, not a segmented baseline.
+% Recurrence-length sweep at S=512 lanes, chunk L=4096; label = total elements
+% W*S. At the largest size both vendor scans OOM (nan) while the folded Halide
+% scan, which never materializes the state, still runs.
+% Data sidecar: gpu_prefix.dat.
+% Preamble needs: \usepackage{pgfplots}\usepackage{pgfplotstable}\pgfplotsset{compat=1.16}
+
+\definecolor{cHal}{HTML}{4C72B0}
+\definecolor{cThr}{HTML}{55A868}
+\definecolor{cCub}{HTML}{C0C0C0}
+
+\pgfplotstableread[col sep=tab]{gpu_prefix.dat}\gputable
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      ybar, bar width=9pt,
+      width=8.6cm, height=6.2cm,
+      symbolic x coords={67M,268M,1.07B},
+      xtick=data,
+      enlarge x limits=0.35, clip=false,
+      ymin=0, ymax=66,
+      ylabel={throughput (Gelem/s)},
+      ylabel style={font=\footnotesize},
+      xlabel={problem size (total elements $W\!\times\!S$, $S{=}512$ lanes)},
+      xlabel style={font=\footnotesize},
+      x tick label style={font=\footnotesize},
+      y tick label style={font=\footnotesize},
+      ymajorgrids, grid style={draw=black!10, line width=0.4pt},
+      axis lines=left, tick align=outside,
+      legend style={at={(0.5,1.02)}, anchor=south, legend columns=-1, font=\scriptsize,
+                    draw=black!25, /tikz/every even column/.append style={column sep=5pt}},
+      legend cell align=left, area legend,
+    ]
+      \addplot+[ybar, fill=cHal, draw=white, line width=0.3pt]
+        table[x=label, y=halide]{\gputable};
+      \addlegendentry{Halide inductive 2-stage}
+      \addplot+[ybar, fill=cThr, draw=white, line width=0.3pt]
+        table[x=label, y=thrust]{\gputable};
+      \addlegendentry{Thrust segmented}
+      \addplot+[ybar, fill=cCub, draw=black!25, line width=0.3pt]
+        table[x=label, y=cub]{\gputable};
+      \addlegendentry{CUB unsegmented (ref)}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{GPU batched inclusive prefix scan on an A10G (sm\_86). The Halide
+    inductive two-stage scan (blue) matches NVIDIA's Thrust segmented scan (green)
+    to within ${\sim}5\%$ once the problem is large enough to amortize launch and
+    fill the device, and it still runs at the largest size where both vendor scans
+    exhaust device memory. CUB's \emph{unsegmented} single-array scan (grey) is
+    shown only as a bandwidth reference; it solves an easier problem (no per-lane
+    segment boundaries) and marks the roofline rather than a like-for-like
+    baseline.}
+  \label{fig:gpu-prefix}
+\end{figure}

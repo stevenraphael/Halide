@@ -1,0 +1,18 @@
+idx	label	fgm	fep	fem	flx	fvl	ugm	uep	uem	ulx	uvl
+0	vite. rec-len (1c)	1.8294	0.4606	0.7683	2.2900	1.83$\times$	1.1158	0.1498	0.0678	1.2656	1.12$\times$
+1	vite. per-step-work	1.6319	0.5941	0.3953	2.2260	1.63$\times$	1.0292	0.1531	0.1028	1.1822	1.03$\times$
+2	kalm. arith-intensity	1.2503	nan	nan	1.2503	1.25$\times$	1.8293	nan	nan	1.8293	1.83$\times$
+3	kalm. batch	0.9888	0.8964	0.4270	1.8852	0.99$\times$	1.2125	0.7411	0.3929	1.9536	1.21$\times$
+4	kalm. rec-len (32c)	0.8941	0.6082	0.3365	1.5023	0.89$\times$	1.1340	0.5060	0.3296	1.6400	1.13$\times$
+5	kalm. rec-len (1c)	0.7110	0.4974	0.1805	1.2085	0.71$\times$	0.9182	0.1099	0.1432	1.0281	0.92$\times$
+6	cheb. per-step-work	1.0137	0.0532	0.0278	1.0669	1.01$\times$	0.9917	0.0040	0.0021	0.9957	0.99$\times$
+7	cheb. rec-len	0.9979	0.0137	0.0248	1.0117	1.00$\times$	0.9861	0.0132	0.0311	0.9993	0.99$\times$
+8	ode. batch	4.6091	0.5564	0.4964	5.1655	4.61$\times$	1.0170	0.0150	0.0148	1.0320	1.02$\times$
+9	ode. rec-len	3.2083	1.5676	2.1792	4.7760	3.21$\times$	0.9684	0.0266	0.0291	0.9950	0.97$\times$
+10	pref. shift (32c)	2.2393	nan	nan	2.2393	2.24$\times$	1.1849	nan	nan	1.1849	1.18$\times$
+11	pref. shift (1c)	1.7082	nan	nan	1.7082	1.71$\times$	1.2782	nan	nan	1.2782	1.28$\times$
+12	pref. mean (32c)	1.5852	nan	nan	1.5852	1.59$\times$	1.4364	nan	nan	1.4364	1.44$\times$
+13	pref. mean (1c)	1.3271	nan	nan	1.3271	1.33$\times$	1.2765	nan	nan	1.2765	1.28$\times$
+14	ster. small w9	1.1692	nan	nan	1.1692	1.17$\times$	1.1463	nan	nan	1.1463	1.15$\times$
+15	ster. full-res w15	1.0500	nan	nan	1.0500	1.05$\times$	1.0291	nan	nan	1.0291	1.03$\times$
+16	ster. full-res w9	0.9542	nan	nan	0.9542	0.95$\times$	0.8511	nan	nan	0.8511	0.85$\times$

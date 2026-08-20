@@ -1,0 +1,331 @@
+% Benchmark suite: algorithms, implementations, and swept parameters.
+% Self-contained section; uses only booktabs (for \toprule/\midrule/\bottomrule).
+% \usepackage{booktabs}
+
+\section{Benchmarks}
+\label{sec:benchmarks}
+
+\subsection{Methodology}
+\label{sec:methodology}
+
+Every benchmark is a first-order recurrence whose per-step state can be
+\emph{folded} (stored in a small sliding window) rather than \emph{materialized}
+over the whole recurrence axis. To separate the effect of storage folding from
+the effect of producer/consumer fusion, each application is expressed as three
+variants that share the same algorithm and fusion structure and differ only in
+how much of the recurrence state is kept live:
+
+\begin{enumerate}
+  \item \textbf{non-inductive (materialize)} --- the baseline formulation, written
+    \emph{without} inductive functions: the full trajectory (or a dense sliding
+    window via an \texttt{RDom}) is materialized in a buffer. This is the
+    ``obvious'' Halide implementation.
+  \item \textbf{inductive unfolded} --- the inductive-function formulation with
+    storage folding \emph{disabled} (fold factor pinned to the full
+    recurrence-axis extent). It differs from (3) only in the fold factor, so it
+    isolates \emph{folding} from \emph{fusion}.
+  \item \textbf{inductive folded} --- the inductive-function formulation with the
+    recurrence axis folded to the minimal window (typically $2$--$3$ slots). This
+    is the proposed implementation.
+\end{enumerate}
+
+Where a mature third-party or hand-written baseline exists (OpenCV for stereo,
+Boost.odeint for the ODE, oneTBB/CUB/Thrust for scan, the vendor CUDA kernel for
+Mamba) it is included as an \emph{external reference}; it is not a non-inductive
+\emph{formulation} in the sense above and is reported separately.
+
+\paragraph{Why these computations are inductive.}
+Each benchmark is a \emph{recursively-defined producer feeding a consumer}: a Func
+whose update reads its own value at a bounded lag along one axis, whose result is
+then consumed downstream (a reduction, a running mean, an output image, an
+observer). Written naively, such a producer must be computed and stored in full
+before its consumer runs (\texttt{compute\_root}), which both destroys
+producer/consumer locality and materializes the entire trajectory. An inductive
+function instead lets the recursive producer be computed \emph{fused with} its
+consumer---each recurrence step is produced exactly where it is consumed, so the
+two remain resident together in cache or registers---while the recurrence axis is
+kept in a small \emph{folded} window rather than in full. Two properties make this
+legal, and every benchmark below has them: \textbf{(i)~bounded-lag self-reference}
+(a $k$th-order recurrence keeps only $k{+}1$ slots live), and
+\textbf{(ii)~monotone in-order consumption} (the consumer reads each step before
+folding overwrites it). The payoff is therefore twofold---preserved
+producer/consumer locality \emph{and} storage folding of the recurrence state from
+the whole trajectory down to the window---and it is largest exactly when the
+unfolded trajectory is big relative to cache (all apps except Chebyshev, whose
+trajectory stays cache-resident and is included as the in-cache tie).
+
+\paragraph{Dimension roles.}
+For each application we distinguish three kinds of axis, because folding interacts
+with each differently:
+\begin{itemize}
+  \item \textbf{recurrence length} --- the axis the recurrence runs along, i.e.\ the
+    \emph{folded} axis. Sweeping it grows the unfolded footprint without changing
+    per-step work; it is the axis that crosses the cache boundary.
+  \item \textbf{per-step work} --- the computation per recurrence step (transition
+    scan width, matvec size, stencil width). Sweeping it changes arithmetic
+    intensity.
+  \item \textbf{batch / parallel} --- independent problem instances scheduled in
+    parallel. Sweeping it grows total footprint via a \emph{parallel} axis, so its
+    points collapse onto the same footprint/cache curve as the recurrence-length
+    sweep.
+\end{itemize}
+
+\paragraph{Measurement protocol.}
+Timing is the median of $30$ timed iterations after $3$ warmups (best/min and IQR
+also recorded); each iteration is one full \texttt{realize()} (plus a device sync
+on GPU), and runs are pinned to a single NUMA node. The recurrence-state
+footprint is reported \emph{byte-exact}: either measured as the high-water mark of
+a custom Halide allocator wrapped around one untimed \texttt{realize()} (Viterbi,
+Chebyshev, ODE) or computed analytically from the schedule (Kalman, prefix-sum,
+StereoBM). Input/output buffers are excluded, so only the recurrence state---the
+quantity folding controls---is counted. Footprint is deterministic (independent of
+CPU speed and, for these applications, of thread count), so it is captured with a
+single trial. CPU results use an AMD EPYC (Zen~2, AVX2) node; GPU results an
+NVIDIA A10G (sm\_86). All Halide variants use the same Halide build.
+
+\subsection{CPU benchmarks}
+
+\paragraph{Viterbi decoding.}
+Maximum-likelihood state-sequence decoding for a hidden Markov model in the log
+domain. At each time step the per-state score is updated by a max-plus transition
+scan over the previous step's scores plus the emission term, with a backpointer
+retained for the traceback; the forward pass is a first-order recurrence over time
+$t$.
+\emph{Inductive because:} the score column is a recursive producer reading only its
+$t{-}1$ predecessor (lag~1, Markov), consumed by the next step (and the traceback)
+in increasing~$t$; fusing it with that consumer folds the score axis $t\!\to\!2$.
+\emph{Implementations:} non-inductive (materialize the full $S\times T$
+score/backpointer trajectory); inductive unfolded ($\mathrm{fold}\;t\!\to\!T{+}1$);
+inductive folded ($\mathrm{fold}\;t\!\to\!2$).
+\emph{Setups} (Fig.~\ref{fig:combined-setups}):
+\begin{itemize}\itemsep2pt
+  \item \textit{rec-len (1c)} --- recurrence length swept over
+    $T\in\{5000,20000,80000,320000\}$ (4 values, spanning the LLC boundary), with
+    $S{=}16$ states and $M{=}4$ observations fixed, single-threaded (Viterbi has no
+    parallel axis).
+  \item \textit{per-step-work} --- state count swept over $S\in\{4,16,64,256\}$
+    (4 values, growing the $O(S)$ transition scan and the footprint together),
+    with $M{=}8$ and $T{=}50000$ fixed, single-threaded.
+\end{itemize}
+
+\paragraph{Kalman / latent AR(2) log-likelihood.}
+Log-likelihood of a latent second-order autoregressive process with observation
+noise, evaluated by the Kalman filter recursion (predict/update) over time; the
+filtered mean/covariance form a first-order recurrence over $t$ and the
+log-likelihood accumulates along the way. Batched over $B$ independent series.
+\emph{Inductive because:} the filtered state is a recursive producer needing only
+its $t{-}1$ value (the AR(2)'s two lags are absorbed into the augmented state, so
+still lag~1), consumed by the running log-likelihood reduction in time order; fused
+with that reduction it folds $t\!\to\!2$.
+\emph{Implementations:} non-inductive (materialize the filtered trajectory);
+inductive unfolded ($\mathrm{fold}\;t\!\to\!T$); inductive folded
+($\mathrm{fold}\;t\!\to\!2$).
+\emph{Setups} (Fig.~\ref{fig:combined-setups}):
+\begin{itemize}\itemsep2pt
+  \item \textit{rec-len (1c)} --- recurrence length swept over
+    $T\in\{1024,4096,16384,65536,131072\}$ (5 values, crossing the LLC boundary),
+    $B{=}256$ series, single-threaded.
+  \item \textit{rec-len (32c)} --- the same $T$ sweep (5 values), $B{=}256$, at
+    $32$ threads; separated from the 1-core run because core count is a
+    qualitatively different regime.
+  \item \textit{batch} --- batch (parallel axis) swept over
+    $B\in\{16,64,256,1024\}$ (4 values, footprint crosses the LLC via $B$),
+    $T{=}16384$ fixed, threads capped to the task count $\min(\mathrm{nproc},B/8)$.
+  \item \textit{arith-intensity} --- a single point ($B{=}256$, $T{=}16384$, $32$
+    threads) with the per-step divide/log replaced by a fixed-reciprocal multiply
+    (same footprint), isolating whether a folding loss is latency- rather than
+    footprint-bound.
+\end{itemize}
+
+\paragraph{Chebyshev semi-iteration.}
+Chebyshev semi-iterative solver for a linear system: each iteration is a dense
+matrix--vector product plus the Chebyshev three-term recurrence combining the
+current and two previous iterates. The recurrence length is the iteration count
+$M$; per-step work is the $O(n^2)$ matvec.
+\emph{Inductive because:} each iterate is a recursive producer of the two previous
+iterates (lag~2), consumed by the next matvec in increasing~$k$; fused, the iterate
+axis folds $\to 3$.
+\emph{Implementations:} non-inductive full materialize ($M{+}1$ iterate columns);
+non-inductive mod-3 ring ($3$ columns, hand-written modulo indexing); inductive
+unfolded ($\mathrm{fold}\!\to\!M{+}1$); inductive folded ($\mathrm{fold}\!\to\!3$).
+\emph{Setups} (Fig.~\ref{fig:combined-setups}):
+\begin{itemize}\itemsep2pt
+  \item \textit{per-step-work} --- system size swept over
+    $n\in\{512,1024,2048,3072\}$ (4 values, growing the $O(n^2)$ matvec per
+    iteration), with $M{=}100$ iterations fixed, single-threaded.
+  \item \textit{rec-len} --- iteration count / fold ratio swept over
+    $M\in\{50,100,200,400\}$ (4 values), with $n{=}2048$ fixed, single-threaded.
+\end{itemize}
+The footprint ($n\,M\cdot 8$) stays cache-resident at realistic sizes, so this is
+the intended \emph{in-cache} datapoint (fold $\approx$ tie).
+
+\paragraph{Allen--Cahn ODE integration.}
+Method-of-lines integration of the Allen--Cahn reaction--diffusion PDE with a
+two-step Adams--Bashforth (AB2) scheme. The spatial field of width $D$ is advanced
+by a sparse stencil; AB2 makes the update a first-order recurrence needing the two
+previous derivative evaluations, and a fused observer reduces the trajectory on
+the fly. Batched over $B$.
+\emph{Inductive because:} the field is a recursive producer needing the two prior
+derivative slabs (lag~2, AB2), consumed immediately by the fused observer in time
+order; that fusion is what folds time $t\!\to\!3$ and avoids storing the
+space$\times$time trajectory.
+\emph{Implementations:} non-inductive (materialize the space$\times$time
+trajectory); inductive unfolded ($\mathrm{fold}\;t\!\to\!T{+}1$); inductive folded
+($\mathrm{fold}\;t\!\to\!3$, the AB2 window). External references: Boost.odeint (RK
+integrator) and a C++ reference$+$observer oracle.
+\emph{Setups} (Fig.~\ref{fig:combined-setups}):
+\begin{itemize}\itemsep2pt
+  \item \textit{rec-len} --- number of time steps swept over
+    $T\in\{2048,8192,32768,131072\}$ (4 values, crossing the LLC boundary), with
+    spatial width $D{=}1024$ and batch $B{=}1$ fixed, single-threaded.
+  \item \textit{batch} --- batch swept over $B\in\{1,4,16\}$ (3 values, growing
+    the footprint $D\,B\,T\cdot 4$), with $D{=}1024$ and $T{=}8192$ fixed,
+    single-threaded.
+\end{itemize}
+
+\paragraph{Batched prefix scan.}
+Inclusive prefix sum over each row of a $W\times H$ matrix followed by a
+running-mean (or cheap $\gg 2$) consumer. The scan is a first-order additive
+recurrence along $W$; associativity of $+$ also admits a two-stage chunk
+decomposition that parallelizes \emph{along} the scan axis.
+\emph{Inductive because:} the prefix is a recursive producer needing only its
+$i{-}1$ value (lag~1, a single carried scalar), consumed left-to-right by the
+running-mean/shift stage; fused, the scan axis folds to one accumulator
+($x\!\to\!1$).
+\emph{Implementations:} inductive folded ($\mathrm{fold}\;x\!\to\!1$, $O(1)$
+accumulator); inductive unfolded ($\mathrm{fold}\;x\!\to\!W$, materialized prefix
+row); non-inductive (\texttt{RDom}, materialize the $O(W)$ row); one-stage folded
+(parallel over rows only); two-stage inductive scan (parallel along time via
+chunking). External reference: oneTBB \texttt{parallel\_scan} (and, on GPU,
+CUB/Thrust---reported separately as vendor scans).
+\emph{Setups} (Fig.~\ref{fig:combined-setups}) --- all on a fixed
+$W{=}1048576 \times H{=}32$ matrix (32 rows of length $\sim\!10^6$); the two
+qualitative axes are the downstream consumer and the core count, and each cell is
+a single operating point (no parameter is swept within it, hence no whisker):
+\begin{itemize}\itemsep2pt
+  \item \textit{mean (1c)} / \textit{mean (32c)} --- running-mean consumer
+    ($p_i/(i{+}1)$), single-threaded and at capped threads ($\min(\mathrm{nproc},32)$).
+  \item \textit{shift (1c)} / \textit{shift (32c)} --- the cheap $\gg2$ consumer
+    (isolates the scan from the divide), single-threaded and at capped threads.
+\end{itemize}
+(A separate parallelism-regime sweep over lane count $S\in\{1,8,32\}$ ---
+one-stage vs.\ oneTBB vs.\ two-stage, chunk $L{=}4096$ --- has no non-inductive
+counterpart and so does not appear in Fig.~\ref{fig:combined-setups}.)
+
+\paragraph{Stereo block matching.}
+StereoBM disparity estimation: for each pixel and candidate disparity, a
+sum-of-absolute-differences over a $\mathit{winsize}\times\mathit{winsize}$ support
+window, selecting the disparity that minimizes SAD. The vertical accumulation of
+the SAD box filter is a first-order sliding-window recurrence down image rows $y$,
+which is what folds.
+\emph{Inductive because:} the column running-sum is a recursive producer of its
+$y{-}1$ value (lag~1: add the entering row, subtract the leaving one), consumed
+top-to-bottom by the disparity-selection stage; fused, the vertical accumulation
+folds $y\!\to\!1$.
+\emph{Implementations:} inductive folded ($\mathrm{fold}\;y\!\to\!1$, one running
+row); inductive unfolded ($\mathrm{fold}\;y\!\to\!H$, full column); schedule4
+(non-inductive, \texttt{RDom} vertical slide). External reference: OpenCV StereoBM
+on the same image pair.
+All setups run on the real Middlebury \emph{Aloe} stereo pair and, within each,
+sweep the strip width $\mathit{tilesize}\in\{8,12,16,24,32,40,48,64,80,96,128\}$
+(11 values) --- a pure scheduling knob that does not change the result (so OpenCV
+parity holds) but trades cache locality against the size of the materialized
+non-inductive/unfolded column. Because $\mathit{tilesize}$ affects only
+performance and not the result (unlike the other apps' swept parameters, which are
+different problems), each stereo setup in Fig.~\ref{fig:combined-setups} reports
+the \emph{best tilesize per implementation} --- the best achievable folded/unfolded
+time against the best achievable non-inductive time --- rather than a geomean over
+the sweep, and so appears as a single point with no whisker. The qualitative axes
+are image size (which sets the core regime) and SAD window size:
+\begin{itemize}\itemsep2pt
+  \item \textit{small w9} --- the small Aloe pair \texttt{aloeL/R.png}
+    ($307\times265$), $\mathit{winsize}{=}9$, \textbf{1 core} (single-threaded).
+  \item \textit{full-res w9} --- the full-resolution pair
+    \texttt{aloeL/R\_large.png} ($1282\times1110$), $\mathit{winsize}{=}9$,
+    \textbf{multi-core}: threads are capped to the tile count
+    $\min(\mathrm{nproc},\lceil W/\mathit{tilesize}\rceil)$, so the core count
+    co-varies with tilesize --- $11$ to $48$ across the sweep on the $48$-core
+    measurement node (which is why image size, not cores, is the setup axis here);
+    the best folded and best non-inductive times fall at different tilesizes ($21$
+    and $41$ cores respectively).
+  \item \textit{full-res w15} --- the same full-resolution pair at the larger
+    $\mathit{winsize}{=}15$ window, \textbf{1 core} (single-threaded).
+\end{itemize}
+
+\subsection{GPU benchmark: batched prefix scan}
+
+The same batched prefix scan (the CPU \emph{Batched prefix scan} benchmark above)
+also runs on the GPU, where the
+question is not fold-vs-materialize but whether an inductive Halide scan can hold
+its own against hand-tuned vendor scan libraries. Because $+$ is associative, the
+scan parallelizes \emph{along} time via the two-stage chunk decomposition
+$t=kL+j$: an up-sweep computes each chunk's total (parallel over chunks and
+lanes), a short serial $O(C)$ pass forms the inter-chunk carries, and a down-sweep
+adds the carry to a per-chunk inductive scan whose $j$-axis folds to a single
+register. Chunks map to GPU blocks and lanes to threads.
+\emph{Inductive because:} the per-chunk local scan is a recursive producer of its
+$j{-}1$ value (lag~1), consumed in order by the down-sweep; fused, the $j$-axis is
+never materialized ($\mathrm{fold}\;j\!\to\!1$).
+\emph{Implementations:} the Halide inductive two-stage scan, versus two NVIDIA
+vendor scans --- Thrust \texttt{inclusive\_scan\_by\_key} (the like-for-like
+\emph{segmented} scan) and CUB \texttt{DeviceScan::InclusiveSum} (a single
+\emph{unsegmented} array, an easier problem shown only as a bandwidth roofline).
+The serial-time schedule forced on a \emph{non}-associative recurrence
+(\texttt{prefixsum\_gpu\_nonassoc}, no scan-axis parallelism) exhausts device
+resources at these sizes and does not complete, so---as with Mamba---there is no
+non-inductive GPU baseline; this is an inductive-Halide-vs.-vendor comparison.
+\emph{Swept:} recurrence length via total size $W\!\times\!S \in
+\{67\mathrm{M}, 268\mathrm{M}, 1.07\mathrm{B}\}$ elements at $S{=}512$ lanes and
+chunk $L{=}4096$ (Fig.~\ref{fig:gpu-prefix}); an occupancy sweep over lane count
+$S$ at fixed $W$; and a chunk-length sweep $L\in\{1024,4096,16384\}$ (throughput
+varies ${<}1\%$, i.e.\ the fold depth is not throughput-critical once the device
+is filled). As Fig.~\ref{fig:gpu-prefix} shows, the inductive scan matches Thrust's
+segmented scan to within ${\sim}5\%$ at the sizes where the launch is amortized,
+and it is the only implementation that still runs at $1.07$B elements, where both
+vendor scans run out of device memory.
+
+\input{fig_gpu_prefix.tex}
+
+\subsection{GPU benchmark: Mamba/S6 selective scan}
+
+The Mamba selective-scan step is a first-order \emph{affine} recurrence per
+(batch, channel, state), $h_t = a_t h_{t-1} + b_t$, with $a=\exp(\Delta A)$,
+$b=\Delta B u$, $\Delta=\mathrm{softplus}(\delta)$; the output is a pointwise
+reduction $y_t = D u_t + \sum_n C_n h_{n,t}$. Only $h$ is a true recurrence.
+\emph{Inductive because:} $h$ is a recursive producer of its $t{-}1$ value (lag~1,
+affine), consumed once per step in time order by the output reduction; fused, $h$
+is folded to a single register and never materialized.
+\emph{Implementations:} a Halide register-fold inductive scan (serial in time,
+$h$ kept in registers); a Halide two-stage time-parallel scan (composing affine
+maps, $(a_2,b_2)\circ(a_1,b_1)=(a_2 a_1,\,a_2 b_1{+}b_2)$, over chunks); and the
+vendor CUDA v1 kernel (\texttt{selective\_scan}). There is \emph{no} non-inductive
+Mamba baseline---materializing all of $h$ is ${\approx}8$\,GiB and exceeds the
+buffer-size limit---so Mamba is an inductive-Halide-vs.-vendor comparison rather
+than an inductive-vs.-non-inductive one.
+\emph{Swept} (realistic Mamba-1 dims $D{=}2048,\,N{=}16$): recurrence length
+$T\in\{4096,8192,16384,65536\}$ at $B{=}8$; batch/occupancy $B\in\{1,4,8,16\}$ at
+$T{=}8192$; and, for the two-stage kernel, the chunk length $L$ (fold depth vs.\
+time-parallelism trade-off).
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Benchmark & Recurrence & Folded axis & Non-inductive baseline \\
+    \midrule
+    Viterbi     & max-plus HMM forward   & time $t\!\to\!2$      & materialize $S\times T$ \\
+    Kalman AR(2)& linear filter          & time $t\!\to\!2$      & materialize trajectory \\
+    Chebyshev   & 3-term iteration       & iterate $\to 3$       & full / mod-3 ring \\
+    Allen--Cahn & AB2 multistep ODE      & time $t\!\to\!3$      & materialize space$\times$time \\
+    Prefix scan & additive scan          & index $x\!\to\!1$     & \texttt{RDom} materialize row \\
+    StereoBM    & SAD box filter         & row $y\!\to\!1$       & \texttt{RDom} vertical slide \\
+    \midrule
+    Mamba/S6    & affine (linear) scan   & time (register)      & none (${\approx}8$\,GiB) \\
+    \bottomrule
+  \end{tabular}
+  \caption{Benchmark recurrences, the axis storage-folding collapses, and the
+    non-inductive formulation each is compared against. Mamba has no feasible
+    non-inductive baseline and is compared to a vendor CUDA kernel instead.}
+  \label{tab:benchmarks}
+\end{table}

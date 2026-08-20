@@ -1,0 +1,16 @@
+% Standalone preview of fig_gpu_prefix.tex. Compile:  pdflatex preview_gpu_prefix.tex
+\documentclass[border=4pt]{standalone}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\pgfplotsset{compat=1.16}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+\usepackage{environ}
+\RenewEnviron{figure}[1][]{\BODY}
+\renewcommand{\caption}[2][]{}
+\renewcommand{\label}[1]{}
+
+\begin{document}
+\input{fig_gpu_prefix.tex}
+\end{document}

@@ -1,0 +1,75 @@
+% Per-setup folded-vs-non-inductive speedup figure (PGFPlots).
+% Data sidecar: setups.dat (tab-separated; regenerate with plot_setups.py's dumper).
+% Preamble needs:  \usepackage{pgfplots}\usepackage{pgfplotstable}
+%                  \pgfplotsset{compat=1.16}
+%
+% \input{fig_setups.tex}  inside the document body.
+
+\definecolor{appViterbi}{HTML}{4C72B0}
+\definecolor{appKalman}{HTML}{DD8452}
+\definecolor{appCheby}{HTML}{55A868}
+\definecolor{appODE}{HTML}{C44E52}
+\definecolor{appPrefix}{HTML}{8172B3}
+\definecolor{appStereo}{HTML}{937860}
+
+% Each app has its own geomean column (gmV..gmS), nan elsewhere, so a per-app
+% \addplot simply reads its column -- pgfplots skips the nan rows. No row
+% filtering needed, and every bar lands exactly on its y=idx tick.
+\pgfplotstableread[col sep=tab]{setups.dat}\setuptable
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      xbar, bar width=7pt, bar shift=0pt,
+      width=8.4cm, height=10.2cm,
+      xmin=0, xmax=6.7, ymin=-0.7, ymax=15.7,
+      y dir=reverse,
+      ytick={0,1,...,15},
+      yticklabels from table={\setuptable}{label},
+      y tick label style={font=\footnotesize},
+      xtick={0,1,2,3,4,5},
+      xticklabel={\pgfmathprintnumber{\tick}$\times$},
+      x tick label style={font=\footnotesize},
+      xlabel={speedup of inductive fold vs.\ non-inductive
+              \;(bar: geomean; whisker: min--max across sweep)},
+      xlabel style={font=\footnotesize, align=center},
+      axis lines=left, axis line style={-},
+      y axis line style={draw=none}, ytick style={draw=none},
+      tick align=outside, xtick pos=bottom,
+      clip=false,
+      error bars/error bar style={line width=0.6pt, color=black!60},
+      error bars/error mark options={
+        rotate=90, mark size=2.5pt, line width=0.6pt, color=black!60},
+    ]
+      % parity reference
+      \draw[dashed, black!45, line width=0.6pt]
+        (axis cs:1,-0.7) -- (axis cs:1,15.7);
+
+      \newcommand{\appbar}[2]{%
+        \addplot+[xbar, fill=#2, draw=white, line width=0.4pt,
+                  error bars/.cd, x dir=both, x explicit]
+          table[x=#1, y=idx, x error plus=eplus, x error minus=eminus]{\setuptable};}
+      \appbar{gmV}{appViterbi}
+      \appbar{gmK}{appKalman}
+      \appbar{gmC}{appCheby}
+      \appbar{gmO}{appODE}
+      \appbar{gmP}{appPrefix}
+      \appbar{gmS}{appStereo}
+
+      % value labels placed just past the longer of bar/whisker (never clipped)
+      \addplot[xbar, bar width=0pt, draw=none, fill=none,
+               point meta=explicit symbolic, nodes near coords,
+               every node near coord/.append style={
+                 anchor=west, xshift=1.5pt, font=\scriptsize, text=black}]
+        table[x=lx, y=idx, meta=vlabel]{\setuptable};
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Storage folding: median-time speedup of the inductive folded
+    implementation over the non-inductive formulation, one row per
+    qualitatively-distinct setup (testing regime, core count, and aloe image
+    size / window). Each bar is the geometric mean over the parameters swept in
+    that setup; the whisker spans the sweep's min and max. The dashed line marks
+    parity. Bars are coloured by application.}
+  \label{fig:folding-setups}
+\end{figure}

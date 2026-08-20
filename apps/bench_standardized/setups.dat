@@ -1,0 +1,17 @@
+idx	label	eplus	eminus	lx	vlabel	gmV	gmK	gmC	gmO	gmP	gmS
+0	vite. rec-len (1c)	0.4606	0.7683	2.2900	1.83$\times$	1.8294	nan	nan	nan	nan	nan
+1	vite. per-step-work	0.5941	0.3953	2.2260	1.63$\times$	1.6319	nan	nan	nan	nan	nan
+2	kalm. batch	0.8489	0.4745	1.8852	1.04$\times$	nan	1.0363	nan	nan	nan	nan
+3	kalm. rec-len (32c)	0.6082	0.3365	1.5023	0.89$\times$	nan	0.8941	nan	nan	nan	nan
+4	kalm. rec-len (1c)	0.4974	0.1805	1.2085	0.71$\times$	nan	0.7110	nan	nan	nan	nan
+5	cheb. per-step-work	0.0532	0.0278	1.0669	1.01$\times$	nan	nan	1.0137	nan	nan	nan
+6	cheb. rec-len	0.0137	0.0248	1.0117	1.00$\times$	nan	nan	0.9979	nan	nan	nan
+7	ode. batch	0.5564	0.4964	5.1655	4.61$\times$	nan	nan	nan	4.6091	nan	nan
+8	ode. rec-len	1.5676	2.1792	4.7760	3.21$\times$	nan	nan	nan	3.2083	nan	nan
+9	pref. shift (32c)	0.0000	0.0000	2.2393	2.24$\times$	nan	nan	nan	nan	2.2393	nan
+10	pref. shift (1c)	0.0000	0.0000	1.7082	1.71$\times$	nan	nan	nan	nan	1.7082	nan
+11	pref. mean (32c)	0.0000	0.0000	1.5852	1.59$\times$	nan	nan	nan	nan	1.5852	nan
+12	pref. mean (1c)	0.0000	0.0000	1.3271	1.33$\times$	nan	nan	nan	nan	1.3271	nan
+13	ster. small w9	0.4162	0.1486	1.5763	1.16$\times$	nan	nan	nan	nan	nan	1.1601
+14	ster. full-res w9	4.1203	0.5007	5.2291	1.11$\times$	nan	nan	nan	nan	nan	1.1088
+15	ster. full-res w15	0.0709	0.0758	1.1217	1.05$\times$	nan	nan	nan	nan	nan	1.0508

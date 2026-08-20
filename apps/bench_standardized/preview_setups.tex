@@ -1,0 +1,17 @@
+% Standalone preview of fig_setups.tex. Compile:  pdflatex preview_setups.tex
+\documentclass[border=4pt]{standalone}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\pgfplotsset{compat=1.16}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% strip the figure float for standalone (redefine figure to a plain box)
+\usepackage{environ}
+\RenewEnviron{figure}[1][]{\BODY}
+\renewcommand{\caption}[2][]{}
+\renewcommand{\label}[1]{}
+
+\begin{document}
+\input{fig_setups.tex}
+\end{document}

@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
     const char *data_path = argc > 3 ? argv[3] : "/tmp/prefixsum_gpu_data.bin";
 
     try {
-        Target target = get_host_target().with_feature(Target::CUDA).with_feature(Target::CUDACapability89);
+        Target target = get_host_target().with_feature(Target::CUDA).with_feature(Target::CUDACapability86);
 
         Var s("s"), t("t");
         // Real input in DRAM (lane s = dim0, contiguous) -- read from global memory

@@ -12,9 +12,10 @@
 // Log domain (sum of logs + max) rather than products, so long sequences don't
 // underflow float32 -- what librosa does internally too.
 
+#include "Halide.h"
+
 #include "../support/bench_harness.h"
 #include "../support/mem_probe.h"
-#include "Halide.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>

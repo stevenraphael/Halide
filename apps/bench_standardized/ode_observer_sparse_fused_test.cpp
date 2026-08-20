@@ -13,9 +13,10 @@
 //   -Idistrib/include -Lbuild/src -lHalide -lpthread -ldl -o /tmp/ode_spf -std=c++17
 //   LD_LIBRARY_PATH=build/src HL_NUM_THREADS=1 /tmp/ode_spf [D B T]
 
+#include "Halide.h"
+
 #include "../support/bench_harness.h"
 #include "../support/mem_probe.h"
-#include "Halide.h"
 #include <boost/numeric/odeint.hpp>
 #include <cmath>
 #include <cstdio>
