@@ -500,7 +500,17 @@ void Stage::set_dim_type(const VarOrRVar &var, ForType t) {
             // If it's an rvar and the for type is parallel, we need to
             // validate that this doesn't introduce a race condition,
             // unless it is flagged explicitly or is a associative atomic operation.
-            if (!dim.is_pure() && (var.is_rvar || dim.is_inductive()) && is_parallel(t)) {
+            // Inductive dims are only ever allowed to be vectorized, never
+            // parallelized (parallel iterations have no lockstep ordering
+            // guarantee), so this generic race-condition gate only applies
+            // to them for ForType::Parallel; vectorizing an inductive dim is
+            // instead validated at lowering time by
+            // check_inductive_vectorize_legal in ScheduleFunctions.cpp,
+            // which proves the specific shift is safe rather than requiring
+            // the user to assert away all races.
+            if (!dim.is_pure() &&
+                ((var.is_rvar && is_parallel(t)) ||
+                 (dim.is_inductive() && t == ForType::Parallel))) {
                 if (!definition.schedule().allow_race_conditions() &&
                     definition.schedule().atomic()) {
                     if (!definition.schedule().override_atomic_associativity_test()) {
@@ -1131,6 +1141,21 @@ void Stage::split(const string &old, const string &outer, const string &inner, c
             dims.insert(dims.begin() + i, dims[i]);
             dims[i].var = inner_name;
             dims[i + 1].var = outer_name;
+            if (dims[i].dim_type == DimType::InductiveVar) {
+                // Splitting an inductive dimension divides it into a pure
+                // (inner) part and an inductive (outer) part: the inner
+                // Var ranges over the `factor` values within one group,
+                // and the outer Var still ranges over the original
+                // recursion, one group at a time. Whether it's actually
+                // legal to vectorize/parallelize the inner Var is
+                // validated later, at lowering time (see
+                // check_inductive_vectorize_legal in
+                // ScheduleFunctions.cpp); this just gives it the
+                // DimType that permits considering it. The inductive
+                // (outer) part must stay ordered outside the pure
+                // (inner) part -- see splits_reordered in Inductive.cpp.
+                dims[i].dim_type = DimType::PureVar;
+            }
             if (dims[i].for_type == ForType::Extern) {
                 // If we split an extern loop, mark the outer loop serial.
                 dims[i + 1].for_type = ForType::Serial;

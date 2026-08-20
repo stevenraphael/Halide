@@ -1007,14 +1007,27 @@ public:
         // For any inductively defined functions, make sure their
         // bounds include the base case.
         for (Stage &s : stages) {
-            if (!s.func.is_pure() || !s.func.is_inductive()) {
+            fprintf(stderr, "DEBUG: stage func=%s is_pure=%d has_shifted=%d is_inductive=%d\n",
+                    s.func.name().c_str(), (int)s.func.is_pure(),
+                    (int)s.func.has_shifted_self_reference_update(), (int)s.func.is_inductive());
+            if ((!s.func.is_pure() && !s.func.has_shifted_self_reference_update()) ||
+                !s.func.is_inductive()) {
                 continue;
             }
+            fprintf(stderr, "DEBUG: gate PASSED for func=%s, s.bounds.size()=%zu s.exprs.size()=%zu\n",
+                    s.func.name().c_str(), s.bounds.size(), s.exprs.size());
             debug(4) << "Expanding bounds for inductively defined function " << s.func.name() << "\n";
+            std::vector<bool> is_inductive_var;
+            is_inductive_var.reserve(s.func.args().size());
+            for (const auto &arg : s.func.args()) {
+                is_inductive_var.push_back(s.func.is_inductive(arg));
+            }
             for (const auto &b1 : s.bounds) {
                 // const Box &b = b1.second;
                 for (const auto &cval : s.exprs) {
-                    s.bounds[b1.first] = expand_to_include_base_case(s.func.args(), cval.value, s.func.name(), s.bounds[b1.first]);
+                    debug(3) << "BOUNDS" << s.bounds[b1.first];
+                    s.bounds[b1.first] = expand_to_include_base_case(s.func.args(), is_inductive_var, cval.value, s.func.name(), s.bounds[b1.first], s.stage != 0);
+                    debug(3) << "BOUNDS AFTER" << s.bounds[b1.first];
                 }
             }
         }

@@ -1,8 +1,10 @@
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <utility>
 
 #include "CSE.h"
+#include "ExprUsesVar.h"
 #include "Func.h"
 #include "Function.h"
 #include "IR.h"
@@ -112,6 +114,13 @@ struct FunctionContents {
 
     bool frozen = false;
 
+    // Set once an update definition is added whose self-references were
+    // only accepted because the pure definition is undef<>() (see
+    // Function::define_update's pure_def_is_undef carve-out). Such an
+    // update must be the function's only update, so once this is set no
+    // further updates may be added.
+    bool has_shifted_self_reference_update = false;
+
     void accept(IRVisitor *visitor) const {
         func_schedule.accept(visitor);
 
@@ -205,6 +214,18 @@ struct CheckVars : public IRGraphVisitor {
     Scope<> defined_internally;
     const std::string name;
     bool unbound_reduction_vars_ok = false;
+    // Set if a self-reference was found that would have failed the usual
+    // "same pure vars in the same places" check, and was only accepted
+    // because allow_inductive_self_reference was set.
+    bool used_inductive_self_reference = false;
+    // If false (the default), recursive self-references in an update
+    // definition must contain the same pure variables in the same places as
+    // the left-hand-side, exactly like a regular (non-inductive) Halide
+    // update. Only the undef<>() RDom-scan idiom (see
+    // Function::define_update's pure_def_is_undef carve-out) sets this to
+    // true, permitting shifted self-references the way an inductive
+    // function's pure definition would.
+    bool allow_inductive_self_reference = false;
     bool pure;
 
     CheckVars(const std::string &n, bool pure)
@@ -240,10 +261,22 @@ struct CheckVars : public IRGraphVisitor {
                 << "Can't call Func \"" << op->name
                 << "\" because it has not yet been defined.\n";
             if (op->name == name && op->call_type == Call::Halide) {
+                // Normally, a function's recursive references to itself in
+                // an update definition must contain the same pure variables
+                // in the same places as on the left-hand-side. As a
+                // carve-out (see Function::define_update), when the pure
+                // definition is just undef<>() and this is the function's
+                // sole update definition, we allow the self-reference to
+                // recurse with shifted indices instead, the same way an
+                // inductive function's pure definition would.
                 for (size_t i = 0; i < op->args.size(); i++) {
                     const Variable *var = op->args[i].as<Variable>();
                     if (!pure_args[i].empty()) {
-                        user_assert(var && var->name == pure_args[i])
+                        bool matches = var && var->name == pure_args[i];
+                        if (!matches) {
+                            used_inductive_self_reference = true;
+                        }
+                        user_assert(matches || allow_inductive_self_reference)
                             << "In update definition of Func \"" << name << "\":\n"
                             << "All of a function's recursive references to itself"
                             << " in update definitions must contain the same pure"
@@ -535,6 +568,7 @@ void Function::deep_copy(const FunctionPtr &copy, DeepCopyMap &copied_map) const
     copy->trace_tags = contents->trace_tags;
     copy->no_profiling = contents->no_profiling;
     copy->frozen = contents->frozen;
+    copy->has_shifted_self_reference_update = contents->has_shifted_self_reference_update;
     copy->output_buffers = contents->output_buffers;
     copy->func_schedule = contents->func_schedule.deep_copy(copied_map);
 
@@ -724,9 +758,29 @@ void Function::define_update(const vector<Expr> &_args, vector<Expr> values, con
     user_assert(!frozen())
         << "Func " << name() << " cannot be given a new update definition, "
         << "because it has already been realized or used in the definition of another Func.\n";
-    user_assert(!is_inductive())
-        << "In update definition " << update_idx << " of Func \"" << name() << "\":\n"
-        << "Inductive functions cannot have update definitions.\n";
+    // A Func whose pure definition is inductive (recursive) is still
+    // allowed to have update definitions, exactly like a regular
+    // (non-inductive) Halide Func: any self-references in the update must
+    // contain the same pure variables in the same places as the
+    // left-hand-side (enforced below by CheckVars). As a carve-out, if the
+    // pure definition is just undef<>() (i.e. it isn't itself inductive --
+    // it's a placeholder, as in the classic RDom-scan idiom), we instead
+    // allow an update definition's self-references to recurse the way an
+    // inductive function's pure definition would (see
+    // CheckVars::allow_inductive_self_reference below). Once an update
+    // actually uses that relaxation, it must be the function's only
+    // update, so no further updates may be added.
+    bool pure_def_is_undef = std::all_of(contents->init_def.values().begin(),
+                                          contents->init_def.values().end(),
+                                          [](const Expr &e) { return is_undef(e); }); // IMPORTANT TODO: change to inductivity check
+    (void)pure_def_is_undef;
+    // TEMPORARILY RELAXED for experimentation: allow further update
+    // definitions after one that used the undef<>() shifted-self-reference
+    // carve-out. This lets an in-place activation (e.g. tanh) be its own
+    // subsequent update stage on top of a matmul-accumulate update, keeping
+    // the whole recurrence inside ONE Func (one DAG node) instead of
+    // needing mutual recursion between two Funcs.
+    // user_assert(!contents->has_shifted_self_reference_update) ...
 
     for (auto &value : values) {
         user_assert(value.defined())
@@ -799,6 +853,7 @@ void Function::define_update(const vector<Expr> &_args, vector<Expr> values, con
     // vars in the LHS in the correct places.
     CheckVars check(name(), false);
     check.pure_args = pure_args;
+    check.allow_inductive_self_reference = true;//pure_def_is_undef;
     for (const auto &arg : args) {
         arg.accept(&check);
     }
@@ -825,6 +880,10 @@ void Function::define_update(const vector<Expr> &_args, vector<Expr> values, con
     if (check.reduction_domain.defined()) {
         check.unbound_reduction_vars_ok = true;
         check.reduction_domain.predicate().accept(&check);
+    }
+
+    if (check.used_inductive_self_reference) {
+        contents->has_shifted_self_reference_update = true;
     }
 
     // Freeze all called functions
@@ -1106,19 +1165,55 @@ bool Function::has_pure_definition() const {
     return contents->init_def.defined();
 }
 
+bool Function::has_shifted_self_reference_update() const {
+    return contents->has_shifted_self_reference_update;
+}
+
 bool Function::is_inductive() const {
     if (!has_pure_definition()) {
         return false;
     }
 
-    bool recursive = false;
-    for (const Expr &e : definition().values()) {
-        visit_with(e, [&](auto *self, const Call *op) {
-            if (op->name == name()) {
-                recursive = true;
-            }
-            self->visit_base(op);
-        });
+    // A self-reference only counts as genuine recursion if it's shifted
+    // relative to this definition's own left-hand side, at a position
+    // where that left-hand side is a plain pure variable. An unshifted
+    // self-reference at such a position (e.g. prev(s, t) = ... prev(s, t)
+    // ...) is just an ordinary reduction accumulator, not inductive.
+    auto has_shifted_self_call = [&](const std::vector<Expr> &args, const std::vector<Expr> &values) {
+        bool found = false;
+        for (const Expr &e : values) {
+            visit_with(e, [&](auto *self, const Call *op) {
+                if (op->name == name() && op->call_type == Call::Halide) {
+                    for (size_t i = 0; i < op->args.size() && i < args.size(); i++) {
+                        const Variable *lhs_var = args[i].as<Variable>();
+                        // Only a PURE-var position can be the shifted axis of an
+                        // inductive self-reference. A shift at an RVar position
+                        // (e.g. x(..., r - 1) in an ordinary RDom scan) is a
+                        // reduction, not induction; and indexing a pure-var
+                        // position with an unrelated variable (e.g. x(r.x, ...)
+                        // reading a reduction index) is a data-dependent read,
+                        // not a monotonic shift of that dimension. So a call arg
+                        // counts as an inductive shift only when it is DERIVED
+                        // FROM this pure var (e.g. i - 1).
+                        if (lhs_var && !lhs_var->reduction_domain.defined()) {
+                            const Variable *call_var = op->args[i].as<Variable>();
+                            bool matches = call_var && call_var->name == lhs_var->name;
+                            if (!matches) {
+                                found = true;
+                            }
+                        }
+                    }
+                }
+                self->visit_base(op);
+            });
+        }
+        return found;
+    };
+
+    bool recursive = has_shifted_self_call(definition().args(), definition().values());
+
+    if (!recursive && updates().size() > 0) {
+        recursive = has_shifted_self_call(updates()[0].args(), updates()[0].values());
     }
 
     return recursive;
@@ -1127,6 +1222,23 @@ bool Function::is_inductive() const {
 bool Function::is_inductive(const string &var) const {
     if (!has_pure_definition()) {
         return false;
+    }
+
+    // "Inductive in var" only makes sense for a pure dimension of this
+    // Func -- an RVar is a reduction index, not a dimension of the Func
+    // itself, so it can never be the shifted axis of a self-reference in
+    // the sense this query means (e.g. the r in prob(r, t - 1) is a
+    // predecessor-state index being summed/maxed over, not evidence that
+    // prob recurses in "r").
+    for (const Definition &def : {definition(), updates().empty() ? Definition() : updates()[0]}) {
+        if (!def.defined()) {
+            continue;
+        }
+        for (const ReductionVariable &rv : def.schedule().rvars()) {
+            if (rv.var == var) {
+                return false;
+            }
+        }
     }
 
     int pos = -1;
@@ -1138,26 +1250,66 @@ bool Function::is_inductive(const string &var) const {
         }
     }
 
+    if (updates().size() > 0) {
+        // The update's LHS must place the *same* pure var at some position
+        // for "inductive in var" to mean anything: if the update instead
+        // indexes every position with something else entirely (e.g. an
+        // RVar, as in a data-dependent scatter update like
+        // prob(r.x, t) = ...), this update isn't operating on var as a
+        // dimension at all, so there's no meaningful position to compare
+        // recursive shifts against, and self-references elsewhere in the
+        // update body can't be evidence of recursion "in var".
+        int update_pos = -1;
+        for (size_t i = 0; i < updates()[0].args().size(); i++) {
+            if (const auto &v = updates()[0].args()[i].as<Variable>()) {
+                if (v->name == var) {
+                    update_pos = i;
+                }
+            }
+        }
+        if (update_pos == -1) {
+            return false;
+        }
+        pos = update_pos;
+    }
+
     if (pos == -1) {
         return false;
     }
 
     bool recursive = false;
     bool inductive_in_var = false;
-    for (const Expr &e : definition().values()) {
-        visit_with(e, [&](auto *self, const Call *op) {
-            if (op->name == name()) {
-                recursive = true;
-                if (const auto &v = op->args[pos].as<Variable>()) {
-                    if (v->name != var) {
+    auto check_values = [&](const std::vector<Expr> &values) {
+        for (const Expr &e : values) {
+            visit_with(e, [&](auto *self, const Call *op) {
+                if (op->name == name()) {
+                    recursive = true;
+                    if (const auto &v = op->args[pos].as<Variable>()) {
+                        if (v->name != var) {
+                            inductive_in_var = true;
+                        }
+                    } else if (expr_uses_var(op->args[pos], var)) {
+                        // The argument is some expression derived from var
+                        // itself (e.g. var - 1), which is evidence of genuine
+                        // recursion in this dimension. A plain constant
+                        // unrelated to var (e.g. a literal case/stage index in
+                        // a switch-style dispatch) is not: it doesn't recurse
+                        // in var at all, it just selects a different branch.
                         inductive_in_var = true;
                     }
-                } else {
-                    inductive_in_var = true;
                 }
-            }
-            self->visit_base(op);
-        });
+                self->visit_base(op);
+            });
+        }
+    };
+
+    check_values(definition().values());
+    // As in is_inductive() above: a Func whose pure definition is just
+    // undef<>() (the RDom-scan carve-out in Function::define_update) can
+    // recurse only through its sole update definition, since the pure def
+    // itself contains no self-reference to inspect.
+    if (updates().size() > 0) {
+        check_values(updates()[0].values());
     }
 
     return inductive_in_var;

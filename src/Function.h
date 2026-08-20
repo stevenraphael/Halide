@@ -193,6 +193,14 @@ public:
     /** Is this function inductive in the given variable? */
     bool is_inductive(const std::string &var) const;
 
+    /** Does this function's sole update definition recurse via the
+     * undef<>() pure-definition carve-out (see Function::define_update)?
+     * Such a function is not is_pure() (it has an update definition), but
+     * its recursion is otherwise governed the same way a pure inductive
+     * definition's would be, and callers that gate inductive-dimension
+     * handling on is_pure() should also admit this case. */
+    bool has_shifted_self_reference_update() const;
+
     /** Is it legal to inline this function? */
     bool can_be_inlined() const;
 

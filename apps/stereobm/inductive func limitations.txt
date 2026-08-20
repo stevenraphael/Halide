@@ -1,0 +1,20 @@
+What do inductive functions do?
+
+Inductive functions allow certain recursions in Halide to be treated as pure functions for scheduling purposes. 
+
+
+
+
+Restrictions: 
+
+Fixable in theory:
+
+Only works on pure definitions (We need update definitions if the recursion uses more than a constant number of previous values)
+Only works when all dimensions are monotonically decreasing in recursive calls
+
+
+Impossible or near-impossible to fix:
+
+To get any benefit above using an RDom (i.e. we are not computing the entire region at once before using any of the outputs), Halide's sliding window optimization needs to be triggered
+All values that are written in an inductive function cannot be overwritten except during storage folding
+Similarly: Can't re-use memory across multiple updates for a single function even if the above issue "only works on pure definitions" is fixed

@@ -30,7 +30,7 @@ ifeq ($(STEREOBM_BUILD_OPENCV),1)
   TEST_OUTPUTS += $(BIN)/$(HL_TARGET)/out2.png
 endif
 
-.PHONY: build clean test
+.PHONY: build clean test test-win15
 
 build: $(BUILD_TARGETS)
 
@@ -52,13 +52,23 @@ $(BIN)/%/process: process.cpp $(BIN)/%/stereobm.a
 
 $(BIN)/%/out.png: $(BIN)/%/process_opencv
 	@mkdir -p $(@D)
-	$< $(IMAGES)/aloeL.png $(IMAGES)/aloeR.png $@
+	$(RUN_ENV) $< $(IMAGES)/aloeL.png $(IMAGES)/aloeR.png $@
 
 $(BIN)/%/out2.png: $(BIN)/%/process
 	@mkdir -p $(@D)
-	$< $(IMAGES)/aloeL.png $(IMAGES)/aloeR.png $@
+	$(RUN_ENV) $< $(IMAGES)/aloeL.png $(IMAGES)/aloeR.png $@
 
 clean:
 	rm -rf $(BIN)
 
 test: $(TEST_OUTPUTS)
+ifndef WIN15_CHILD
+# Extra suite entry: full-size aloe image, larger 15x15 window, single-core.
+# Built in its own bin subdir so it doesn't clobber the default winsize=9 build.
+test: test-win15
+endif
+
+# Recurse with a 15x15 window and force NUM_THREADS=1 at run time (single-core).
+# WIN15_CHILD guards against the recursive `test` re-adding this dependency.
+test-win15:
+	$(MAKE) WIN15_CHILD=1 BIN=$(BIN_DIR)/win15 STEREOBM_WINSIZE=15 RUN_ENV="NUM_THREADS=1" test

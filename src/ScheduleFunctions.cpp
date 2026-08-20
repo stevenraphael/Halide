@@ -11,6 +11,7 @@
 #include "IRMutator.h"
 #include "IROperator.h"
 #include "IRPrinter.h"
+#include "Inductive.h"
 #include "Inline.h"
 #include "Prefetch.h"
 #include "Qualify.h"
@@ -2012,6 +2013,142 @@ public:
     }
 };
 
+// Walks the pure definition of an inductive Func `f`, checking that
+// vectorizing dimension `var` by `factor` is legal.
+//
+// A recursive self-reference is safe to vectorize over `var` if either:
+//  - some other *inductive* dimension of the call (e.g. a different row
+//    `y`) is provably different from its own current value -- the
+//    referenced value was necessarily computed by a wholly earlier
+//    iteration of an outer serial loop, so no lane of the current vector
+//    op can race with it; or
+//  - some other dimension is a plain (non-inductive) dispatch/stage index
+//    (e.g. `r` in a `case(r) { ... }`-style switch) that is pinned to a
+//    known constant along the current path through the definition's
+//    selects, and the call refers to a different constant -- since a
+//    strictly earlier stage in the deterministic per-lane dispatch order
+//    is necessarily already computed. `r` is not an inductive variable, so
+//    this only needs exact-value tracking, not general interval
+//    reasoning; or
+//  - the reference to `var` itself is provably `var - k` for k == 0 (the
+//    same lane) or a positive constant multiple of `factor` (a distinct,
+//    already-finished vector batch).
+class InductiveVectorizeChecker : public IRVisitor {
+    using IRVisitor::visit;
+    const Function &f;
+    const string &var;
+    int xi;
+    int factor;
+
+    // Exact known values for non-inductive dispatch vars (e.g. r), from a
+    // chain of enclosing `dispatch_var == const` conditions.
+    Scope<int64_t> known;
+
+    void visit(const Call *op) override {
+        if (op->is_intrinsic(Call::if_then_else)) {
+            visit_conditional(op->args[0], op->args[1], op->args[2]);
+            return;
+        }
+        if (op->name == f.name()) {
+            check_call(op->args);
+        }
+        IRVisitor::visit(op);
+    }
+
+    void visit(const Select *op) override {
+        visit_conditional(op->condition, op->true_value, op->false_value);
+    }
+
+    void visit_conditional(const Expr &cond, const Expr &true_value, const Expr &false_value) {
+        if (const EQ *eq = cond.as<EQ>()) {
+            const Variable *v = eq->a.as<Variable>();
+            Expr val = eq->b;
+            if (!v) {
+                v = eq->b.as<Variable>();
+                val = eq->a;
+            }
+            std::optional<int64_t> k = v ? as_const_int(val) : std::nullopt;
+            if (v && k && !f.is_inductive(v->name) && !known.contains(v->name)) {
+                known.push(v->name, *k);
+                true_value.accept(this);
+                known.pop(v->name);
+                false_value.accept(this);
+                return;
+            }
+        }
+        true_value.accept(this);
+        false_value.accept(this);
+    }
+
+    void check_call(const vector<Expr> &args) {
+        bool other_differs = false;
+        for (size_t j = 0; j < args.size(); j++) {
+            if ((int)j == xi) {
+                continue;
+            }
+            const string &name = f.args()[j];
+            if (known.contains(name)) {
+                // A known non-inductive dispatch var: safe if this call
+                // refers to a different constant value of it.
+                if (std::optional<int64_t> k = as_const_int(simplify(args[j]))) {
+                    if (*k != known.get(name)) {
+                        other_differs = true;
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (!f.is_inductive(name)) {
+                continue;
+            }
+            Expr diff = simplify(Variable::make(args[j].type(), name) - args[j]);
+            if (can_prove(diff != 0)) {
+                other_differs = true;
+                break;
+            }
+        }
+        if (other_differs) {
+            return;
+        }
+
+        Expr diff = simplify(Variable::make(args[xi].type(), var) - args[xi]);
+        if (std::optional<int64_t> k = as_const_int(diff)) {
+            // A zero offset (same lane, e.g. a reference to a different,
+            // already-computed stage of the same (x, y)) is trivially safe.
+            user_assert(*k == 0 || (*k > 0 && (*k % factor) == 0))
+                << "Cannot vectorize inductive Func " << f.name()
+                << " over " << var << " with factor " << factor
+                << ": a recursive reference has offset " << *k << " along " << var
+                << ", which must be zero or a positive multiple of the factor, unless "
+                << "some other dimension of the reference is provably different.\n";
+        } else {
+            user_error << "Cannot vectorize inductive Func " << f.name()
+                       << " over " << var << ": unable to prove that a recursive "
+                       << "reference's offset along " << var
+                       << " is a constant multiple of the factor.\n";
+        }
+    }
+
+public:
+    InductiveVectorizeChecker(const Function &f, const string &var, int factor)
+        : f(f), var(var), factor(factor) {
+        xi = -1;
+        for (size_t i = 0; i < f.args().size(); i++) {
+            if (f.args()[i] == var) {
+                xi = (int)i;
+            }
+        }
+        internal_assert(xi != -1) << "Could not find variable " << var << " in Func " << f.name() << "\n";
+    }
+};
+
+void check_inductive_vectorize_legal(const Function &f, const string &var, int factor) {
+    InductiveVectorizeChecker checker(f, var, factor);
+    for (const Expr &e : f.definition().values()) {
+        e.accept(&checker);
+    }
+}
+
 class PrintUsesOfFunc : public IRVisitor {
     using IRVisitor::visit;
 
@@ -2132,6 +2269,95 @@ bool validate_schedule(Function f, const Stmt &s, const Target &target, bool is_
                     << "Externally defined Func " << f.name()
                     << " cannot have loop type " << i.for_type << " (" << i.var << ")\n";
             }
+        }
+    }
+
+    if (f.is_inductive()) {
+        // Check that any RDom used in an inductive Func's update (the
+        // undef<>() self-referencing-scan idiom) has its loop nested inside
+        // (i.e. innermost of) every inductive dimension. Recursive
+        // self-references along the inductive dimensions are only valid if
+        // they refer to values computed by prior, fully-completed
+        // iterations of the RDom's loop, which requires the RDom loop to be
+        // the innermost loop relative to the inductive dimensions.
+        for (const Definition &upd : f.updates()) {
+            const vector<Dim> &dims = upd.schedule().dims();
+            int innermost_rvar_pos = -1;
+            for (size_t i = 0; i < dims.size(); i++) {
+                if (dims[i].is_rvar()) {
+                    innermost_rvar_pos = std::max(innermost_rvar_pos, (int)i);
+                }
+            }
+            if (innermost_rvar_pos == -1) {
+                continue;
+            }
+            for (size_t i = 0; i < upd.args().size() && i < f.args().size(); i++) {
+                if (!f.is_inductive(f.args()[i])) {
+                    continue;
+                }
+                const Variable *v = upd.args()[i].as<Variable>();
+                if (!v) {
+                    continue;
+                }
+                for (size_t d = 0; d < dims.size(); d++) {
+                    if (dims[d].var == v->name) {
+                        user_assert(innermost_rvar_pos < (int)d)
+                            << "In the update definition of inductive Func " << f.name()
+                            << ", the RDom's loop must be nested inside all inductive "
+                            << "variable loops, but inductive variable " << v->name
+                            << " is nested inside the RDom's loop.\n";
+                    }
+                }
+            }
+        }
+
+        // An inductive dimension that's been split into a pure (inner)
+        // part and an inductive (outer) part (see Stage::split in
+        // Func.cpp) must keep the pure part nested inside the inductive
+        // part.
+        user_assert(!splits_reordered(f.args(), f))
+            << "Inductive Func " << f.name()
+            << " has an illegal reordering of a split inductive dimension: "
+            << "the pure (inner) part of a split inductive variable must "
+            << "stay nested inside the inductive (outer) part.\n";
+
+        // Check that any vectorized dimension of the pure definition that
+        // traces back (through splits) to an inductive dimension is legal
+        // (see check_inductive_vectorize_legal). Inductive dimensions
+        // cannot be parallelized: unlike vectorization, where a fixed
+        // shift by a multiple of the vector width guarantees the
+        // referenced lanes were fully computed by an earlier,
+        // already-completed vector iteration, parallel threads have no
+        // such lockstep ordering guarantee between them. Splitting an
+        // inductive dimension reclassifies its inner part as a PureVar
+        // (see Stage::split), so this can't just filter on
+        // Dim::is_inductive() -- it has to trace each dim back to its
+        // origin var through the chain of splits.
+        const StageSchedule &pure_sched = f.definition().schedule();
+        for (const Dim &d : pure_sched.dims()) {
+            string orig_var = d.var;
+            int factor = 1;
+            for (const Split &sp : pure_sched.splits()) {
+                if (sp.inner == orig_var) {
+                    if (std::optional<int64_t> f_ = as_const_int(sp.factor)) {
+                        factor *= (int)*f_;
+                    }
+                    orig_var = sp.old_var;
+                } else if (sp.outer == orig_var) {
+                    orig_var = sp.old_var;
+                }
+            }
+            if (!f.is_inductive(orig_var)) {
+                continue;
+            }
+            user_assert(d.for_type != ForType::Parallel)
+                << "In the pure definition of inductive Func " << f.name()
+                << ", variable " << d.var << " (from inductive dimension "
+                << orig_var << ") cannot be parallelized (only vectorized).\n";
+            if (d.for_type != ForType::Vectorized) {
+                continue;
+            }
+            check_inductive_vectorize_legal(f, orig_var, factor);
         }
     }
 
